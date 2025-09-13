@@ -1825,13 +1825,21 @@ class EnhancedTemplateMapperWithImages:
                                 data_dict[col_map[normalized_col]] = data_value
                     
                             # Store filename components
-                            field_name_lower = mapping['template_field'].lower()
-                            if any(term in field_name_lower for term in ['vendor code', 'supplier code', 'code']):
-                                filename_parts['vendor_code'] = data_value
-                            elif 'part' in field_name_lower and ('no' in field_name_lower or 'number' in field_name_lower):
-                                filename_parts['part_no'] = data_value
-                            elif 'description' in field_name_lower or 'desc' in field_name_lower:
-                                filename_parts['description'] = data_value
+                             # Store filename components by checking the mapped DATA COLUMN name, which is more reliable.
+                            data_col_name = mapping.get('data_column', '').lower()
+                            if data_col_name:
+                                # Part Number Check (check if not already found)
+                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number', 'part_number', 'part #']):
+                                    filename_parts['part_no'] = data_value
+                                
+                                # Description Check (check if not already found)
+                                if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc', 'part desc']):
+                                    filename_parts['description'] = data_value
+
+                                # Vendor Code Check (check if not already found)
+                                if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code', 'supplier code']):
+                                    filename_parts['vendor_code'] = data_value
+                            # --- END: ROBUST FILENAME COMPONENT LOGIC ---
                     
                             # Find target cell and write data
                             target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
