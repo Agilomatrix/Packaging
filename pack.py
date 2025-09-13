@@ -896,10 +896,19 @@ class EnhancedTemplateMapperWithImages:
                 'field_mappings': {
                     'L': 'Part L',
                     'l': 'Part L',
+                    'length': 'Part L',
+                    'part l': 'Part L',
+                    'component l': 'Part L',
                     'W': 'Part W',
                     'w': 'Part W',
+                    'width': 'Part W',
+                    'part w': 'Part W',
+                    'component w': 'Part W',
                     'H': 'Part H',
                     'h': 'Part H',
+                    'height': 'Part H',
+                    'part h': 'Part H',
+                    'component h': 'Part H',
                     'part no': 'Part No',
                     'part number': 'Part No',
                     'description': 'Part Description',
@@ -1766,7 +1775,7 @@ class EnhancedTemplateMapperWithImages:
                 'red':   PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid'),
                 'blue':  PatternFill(start_color='FFD9E1F2', end_color='FFD9E1F2', fill_type='solid')
             }
-
+            
             # Force direct capture of critical procedure columns if present in Excel
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm"],
@@ -1795,45 +1804,63 @@ class EnhancedTemplateMapperWithImages:
             if not template_procedure_steps:
                 st.warning("⚠️ No procedure steps found in template. Will use empty steps.")
             
+            # Store all row data for multi-template generation
             st.session_state.all_row_data = []
     
             # Process each row
             for row_idx in range(len(data_df)):
                 st.write(f"🔄 Processing row {row_idx + 1}/{len(data_df)}")
                 
+                # Load fresh template for each row
                 workbook = openpyxl.load_workbook(template_path)
                 worksheet = workbook.active
         
+                # Find template fields with section context
                 template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
+        
+                # Map data with section context for current row
                 mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
         
+                # Apply mappings to template
                 mapping_count = 0
-                data_dict = {}
-                filename_parts = {}
+                data_dict = {}  # Store mapped data for procedure generation
+                filename_parts = {}  # Store parts for filename
         
                 for coord, mapping in mapping_results.items():
                     if mapping['is_mappable'] and mapping['data_column']:
-                        # ... (this entire data mapping loop remains unchanged) ...
                         try:
                             data_col = mapping['data_column']
-                            raw_value = data_df[data_col].iloc[row_idx]
+                            raw_value = data_df[data_col].iloc[row_idx]  # Use current row
                             data_value = self.clean_data_value(raw_value)
+                    
+                            # Store in data_dict for procedure generation
                             data_dict[mapping['template_field']] = data_value
+
+                            # Force map critical fields if the column matches
                             normalized_col = self.preprocess_text(data_col)
                             if normalized_col in col_map:
                                 data_dict[col_map[normalized_col]] = data_value
-                            
-                            # Robust filename logic here...
+                    
+                            # Store filename components
+                             # Store filename components by checking the mapped DATA COLUMN name, which is more reliable.
                             data_col_name = mapping.get('data_column', '').lower()
                             if data_col_name:
-                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number']):
+                                # Part Number Check (check if not already found)
+                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number', 'part_number', 'part #']):
                                     filename_parts['part_no'] = data_value
-                                if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc']):
+                                
+                                # Description Check (check if not already found)
+                                if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc', 'part desc']):
                                     filename_parts['description'] = data_value
-                                if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code']):
-                                    filename_parts['vendor_code'] = data_value
 
+                                # Vendor Code Check (check if not already found)
+                                if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code', 'supplier code']):
+                                    filename_parts['vendor_code'] = data_value
+                            # --- END: ROBUST FILENAME COMPONENT LOGIC ---
+                    
+                            # Find target cell and write data
                             target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
+                    
                             if target_cell_coord and data_value:
                                 target_cell = worksheet[target_cell_coord]
                                 target_cell.value = data_value
@@ -1841,58 +1868,34 @@ class EnhancedTemplateMapperWithImages:
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
                 
-                # ... (procedure steps logic remains unchanged) ...
+                # *** NEW: Process procedure steps from template instead of hardcoded ***
                 steps_written = 0
                 if template_procedure_steps:
+                    # Substitute placeholders with actual data
                     filled_steps = self.substitute_placeholders_in_steps(template_procedure_steps, data_dict)
-                    steps_written = self.write_filled_steps_to_template(worksheet, filled_steps)
-                
-                # --- START: NEW AUTOMATIC COLORING LOGIC ---
-                st.write("🎨 Checking for remarks to apply cell color...")
-                # Check if the 'Remarks' column exists in the data file (case-insensitive)
-                remarks_col_name = None
-                for col in data_df.columns:
-                    if col.lower() == 'remarks':
-                        remarks_col_name = col
-                        break
-                
-                if remarks_col_name:
-                    # Get the color value for the current row, e.g., "red", "green"
-                    color_value = str(data_df[remarks_col_name].iloc[row_idx]).lower().strip()
                     
-                    if color_value in COLOR_MAP:
-                        # Find the coordinate of the "PROBLEMS IF ANY" data cell again
-                        problems_cell_coord = None
-                        for coord, mapping in mapping_results.items():
-                            if 'problems' in self.preprocess_text(mapping['template_field']):
-                                problems_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
-                                break
-                        
-                        if problems_cell_coord:
-                            # Apply the corresponding color fill to the cell
-                            target_cell = worksheet[problems_cell_coord]
-                            target_cell.fill = COLOR_MAP[color_value]
-                            st.success(f"✅ Applied '{color_value}' color to cell {problems_cell_coord}.")
-                        else:
-                            st.warning("⚠️ Found a remark color, but could not find the 'Problems' cell to color.")
+                    # Write the filled steps back to template
+                    steps_written = self.write_filled_steps_to_template(worksheet, filled_steps)
                 else:
-                    st.info("ℹ️ No 'Remarks' column found in the data file. Skipping cell coloring.")
-                # --- END: NEW AUTOMATIC COLORING LOGIC ---
-
-                # ... (filename generation and file saving logic remains unchanged) ...
+                    st.write("⚠️ No procedure steps to process for this row")
+                
+                # Generate filename
                 vendor_code = filename_parts.get('vendor_code', 'NoVendor')
                 part_no = filename_parts.get('part_no', 'NoPart')
                 description = filename_parts.get('description', 'NoDesc')
         
+                # Clean filename parts
                 vendor_code = re.sub(r'[^\w\-_]', '', str(vendor_code))[:10]
                 part_no = re.sub(r'[^\w\-_]', '', str(part_no))[:15]
                 description = re.sub(r'[^\w\-_]', '', str(description))[:20]
         
                 filename = f"{vendor_code}_{part_no}_{description}.xlsx"
         
+                # Save workbook to temporary file
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
                     workbook.save(tmp_file.name)
             
+                    # Store row data
                     row_data = {
                         'row_index': row_idx,
                         'filename': filename,
@@ -1908,7 +1911,7 @@ class EnhancedTemplateMapperWithImages:
                     st.session_state.all_row_data.append(row_data)
                 
                 workbook.close()
-                st.write(f"✅ Row {row_idx + 1} processed -> {filename}")
+                st.write(f"✅ Row {row_idx + 1} processed: {mapping_count} fields mapped, {steps_written} steps written -> {filename}")
             
             st.success(f"🎉 Successfully processed {len(data_df)} rows!")
             return True, st.session_state.all_row_data
@@ -1919,86 +1922,84 @@ class EnhancedTemplateMapperWithImages:
             return False, []
             
     def map_data_with_section_context_for_row(self, template_fields, data_df, row_idx):
-        """
-        Map data for a specific row using a robust, multi-stage process with strict contextual exclusions.
-        """
+        """Map data for specific row"""
         mapping_results = {}
         used_columns = set()
-        data_columns = data_df.columns.tolist()
 
-        for coord, field in template_fields.items():
-            try:
-                best_match = None
-                best_score = 0.0
-                field_value = field['value']
-                section_context = field.get('section_context')
-                
-                # Step 1: Get the exclusion words for the current section. This is critical.
-                exclusions = self.section_exclusions.get(section_context, [])
+        try:
+            data_columns = data_df.columns.tolist()
 
-                # Step 2: Prepare a list of "safe" data columns by applying the exclusions first.
-                safe_data_columns = []
-                for data_col in data_columns:
-                    if data_col in used_columns:
-                        continue
-                    
-                    preprocessed_data_col = self.preprocess_text(data_col)
-                    # If the column name contains an exclusion word, it is NOT safe.
-                    if any(excl_word in preprocessed_data_col for excl_word in exclusions):
-                        continue # Skip this column entirely for this field.
-                    
-                    safe_data_columns.append(data_col)
-                
-                # Step 3: Attempt to map using the high-priority rules on the SAFE columns.
-                normalized_field = self.preprocess_text(field_value)
-                if section_context and section_context in self.section_mappings:
-                    section_rules = self.section_mappings[section_context]['field_mappings']
-                    
-                    # Check if a specific rule exists for this field (e.g., 'L' -> 'Part L')
-                    if normalized_field in section_rules:
-                        expected_col_pattern = section_rules[normalized_field]
-                        
-                        # Correctly determine the full expected column name without double-prefixing
-                        sections_without_prefix = ["part_information", "vendor_information", "procedure_information", "miscellaneous_information", "general_information"]
-                        if section_context in sections_without_prefix:
-                            expected_column_name = expected_col_pattern
-                        else:
-                            # This now correctly applies ONLY to primary/secondary packaging
-                            prefix = section_context.split('_')[0].capitalize()
-                            expected_column_name = f"{prefix} {expected_col_pattern}"
-                        
-                        # Now, search ONLY within the safe_data_columns
-                        for safe_col in safe_data_columns:
-                            similarity = self.calculate_similarity(expected_column_name, safe_col)
+            for coord, field in template_fields.items():
+                try:
+                    best_match = None
+                    best_score = 0.0
+                    field_value = field['value']
+                    section_context = field.get('section_context')
+
+                    # Use existing mapping logic but for specific row
+                    if section_context and section_context in self.section_mappings:
+                        section_mappings = self.section_mappings[section_context]['field_mappings']
+
+                        for template_field_key, data_column_pattern in section_mappings.items():
+                            normalized_field_value = self.preprocess_text(field_value)
+                            normalized_template_key = self.preprocess_text(template_field_key)
+
+                            if normalized_field_value == normalized_template_key:
+                                if section_context == "procedure_information":
+                                    expected_column = data_column_pattern 
+                                else:
+                                    section_prefix = section_context.split('_')[0].capitalize()
+                                    expected_column = f"{section_prefix} {data_column_pattern}".strip()
+
+                                for data_col in data_columns:
+                                    if data_col in used_columns:
+                                        continue
+                                    if self.preprocess_text(data_col) == self.preprocess_text(expected_column):
+                                        best_match = data_col
+                                        best_score = 1.0
+                                        break
+
+                                if not best_match:
+                                    for data_col in data_columns:
+                                        if data_col in used_columns:
+                                            continue
+                                        similarity = self.calculate_similarity(expected_column, data_col)
+                                        if similarity > best_score and similarity >= self.similarity_threshold:
+                                            best_score = similarity
+                                            best_match = data_col
+                                break
+
+                    # Fallback logic (same as original)
+                    if not best_match:
+                        for data_col in data_columns:
+                            if data_col in used_columns:
+                                continue
+                            similarity = self.calculate_similarity(field_value, data_col)
                             if similarity > best_score and similarity >= self.similarity_threshold:
                                 best_score = similarity
-                                best_match = safe_col
+                                best_match = data_col
 
-                # Step 4: If no rule-based match was found, do a general similarity search, but ONLY on the safe columns.
-                if not best_match:
-                    for safe_col in safe_data_columns:
-                        similarity = self.calculate_similarity(field_value, safe_col)
-                        if similarity > best_score and similarity >= self.similarity_threshold:
-                            best_score = similarity
-                            best_match = safe_col
+                    mapping_results[coord] = {
+                        'template_field': field_value,
+                        'data_column': best_match,
+                        'similarity': best_score,
+                        'field_info': field,
+                        'section_context': section_context,
+                        'is_mappable': best_match is not None
+                    }
 
-                # Step 5: Store the final, safe result.
-                mapping_results[coord] = {
-                    'template_field': field_value,
-                    'data_column': best_match,
-                    'similarity': best_score,
-                    'field_info': field,
-                    'section_context': section_context,
-                    'is_mappable': best_match is not None
-                }
-                if best_match:
-                    used_columns.add(best_match)
+                    if best_match:
+                        used_columns.add(best_match)
 
-            except Exception as e:
-                st.error(f"Error mapping field {coord} ('{field.get('value', 'N/A')}'): {e}")
-                continue
-        
+                except Exception as e:
+                    st.error(f"Error mapping field {coord}: {e}")
+                    continue
+
+        except Exception as e:
+            st.error(f"Error in map_data_with_section_context_for_row: {e}")
+
         return mapping_results
+    
     def write_filled_steps_to_template(self, worksheet, filled_steps):
         """Write filled procedure steps to merged cells B to P starting from Row 28"""
         try:
