@@ -2979,24 +2979,41 @@ def main():
                         if len(generated_files) > 1:
                             # Create ZIP with organized structure
                             zip_buffer = io.BytesIO()
-                        
                             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                                # Organize by vendor
+                                # Organize by vendor with custom naming
                                 vendor_folders = {}
                                 for file_info in generated_files:
-                                    vendor = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
-                                    vendor_safe = re.sub(r'[^\w\-_.]', '_', vendor)
-                                
-                                    if vendor_safe not in vendor_folders:
-                                        vendor_folders[vendor_safe] = []
-                                    vendor_folders[vendor_safe].append(file_info)
-                            
-                                # Add files organized by vendor
-                                for vendor_folder, files in vendor_folders.items():
+                                    vendor_code = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
+                                    part_no = file_info['row_info'].get('part_no', 'Unknown_Part')
+                                    part_desc = file_info['row_info'].get('part_desc', 'Unknown_Desc')
+                                    # Clean the strings for safe file/folder names
+                                    vendor_safe = re.sub(r'[^\w\-_.]', '_', str(vendor_code))
+                                    part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
+                                    part_desc_safe = re.sub(r'[^\w\-_.]', '_', str(part_desc))
+                                    # Create folder name: vendor_code_partno_partdesc
+                                    folder_name = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}"
+                                    if folder_name not in vendor_folders:
+                                        vendor_folders[folder_name] = []
+                                    vendor_folders[folder_name].append(file_info)
+                                    # Add files organized by custom folder names
+                                for folder_name, files in vendor_folders.items():
                                     for file_info in files:
-                                        zip_path = f"{vendor_folder}/{file_info['filename']}"
+                                        # Extract info for custom filename
+                                        vendor_code = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
+                                        part_no = file_info['row_info'].get('part_no', 'Unknown_Part') 
+                                        part_desc = file_info['row_info'].get('part_desc', 'Unknown_Desc')
+                                        # Clean for filename
+                                        vendor_safe = re.sub(r'[^\w\-_.]', '_', str(vendor_code))
+                                        part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
+                                        part_desc_safe = re.sub(r'[^\w\-_.]', '_', str(part_desc))
+                    
+                                        # Create custom filename: vendor_code_partno_partdesc.xlsx
+                                        custom_filename = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}.xlsx"
+                    
+                                        # Path in ZIP: folder_name/custom_filename
+                                        zip_path = f"{folder_name}/{custom_filename}"
                                         zip_file.writestr(zip_path, file_info['data'])
-                            
+        
                                 # Add generation report
                                 report_content = "Template Generation Report\n"
                                 report_content += "=" * 40 + "\n\n"
@@ -3004,7 +3021,7 @@ def main():
                                 report_content += f"Total templates: {len(generated_files)}\n"
                                 report_content += f"Total images placed: {total_images_placed}\n"
                                 report_content += f"Placement method: {'Smart Analysis' if use_smart_placement else 'Fixed Positions'}\n\n"
-                            
+        
                                 report_content += "Individual Template Details:\n"
                                 report_content += "-" * 30 + "\n"
                                 for log_entry in generation_log:
@@ -3013,24 +3030,24 @@ def main():
                                     report_content += f"  Vendor: {log_entry['vendor']}\n"
                                     report_content += f"  Images Added: {log_entry['images_added']}\n"
                                     report_content += f"  Method: {log_entry['placement_method']}\n\n"
-                            
+        
                                 zip_file.writestr("Generation_Report.txt", report_content)
-                        
+    
                             zip_buffer.seek(0)
-                        
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.info("📁 Organized by vendor folders with generation report included")
-                        
-                            with col2:
-                                st.download_button(
-                                    label="📦 Download All Templates (ZIP)",
-                                    data=zip_buffer.getvalue(),
-                                    file_name=f"Enhanced_Templates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                                    mime="application/zip",
-                                    key="download_enhanced_zip",
-                                    use_container_width=True
-                                )
+    
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.info("📁 Organized by vendor_partno_partdesc folders with custom filenames")
+    
+                        with col2:
+                            st.download_button(
+                                label="📦 Download All Templates (ZIP)",
+                                data=zip_buffer.getvalue(),
+                                file_name=f"Enhanced_Templates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                                mime="application/zip",
+                                key="download_enhanced_zip",
+                                use_container_width=True
+                        )
                 
                     with tab3:
                         # Detailed generation report
