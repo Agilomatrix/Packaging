@@ -1928,82 +1928,83 @@ class EnhancedTemplateMapperWithImages:
             return False, []
             
     def map_data_with_section_context_for_row(self, template_fields, data_df, row_idx):
-        """Map data for specific row"""
+        """Map data for a specific row using contextual exclusions to prevent incorrect matches."""
         mapping_results = {}
         used_columns = set()
+        data_columns = data_df.columns.tolist()
 
-        try:
-            data_columns = data_df.columns.tolist()
+        for coord, field in template_fields.items():
+            try:
+                best_match = None
+                best_score = 0.0
+                field_value = field['value']
+                section_context = field.get('section_context')
+                
+                # Get the exclusion words for the current section, if any
+                exclusions = self.section_exclusions.get(section_context, [])
 
-            for coord, field in template_fields.items():
-                try:
-                    best_match = None
-                    best_score = 0.0
-                    field_value = field['value']
-                    section_context = field.get('section_context')
+                # --- STAGE 1: High-Confidence Section-Based Mapping ---
+                if section_context and section_context in self.section_mappings:
+                    section_rules = self.section_mappings[section_context]['field_mappings']
+                    normalized_field = self.preprocess_text(field_value)
 
-                    # Use existing mapping logic but for specific row
-                    if section_context and section_context in self.section_mappings:
-                        section_mappings = self.section_mappings[section_context]['field_mappings']
+                    for rule_key, expected_col_pattern in section_rules.items():
+                        if self.preprocess_text(rule_key) == normalized_field:
+                            # We have a rule for this field. Now find the best data column.
+                            for data_col in data_columns:
+                                if data_col in used_columns:
+                                    continue
+                                
+                                # CRITICAL CHECK: Apply exclusions to avoid confusion
+                                preprocessed_data_col = self.preprocess_text(data_col)
+                                if any(excl_word in preprocessed_data_col for excl_word in exclusions):
+                                    continue # Ignore this column because it contains an exclusion word
 
-                        for template_field_key, data_column_pattern in section_mappings.items():
-                            normalized_field_value = self.preprocess_text(field_value)
-                            normalized_template_key = self.preprocess_text(template_field_key)
-
-                            if normalized_field_value == normalized_template_key:
-                                if section_context == "procedure_information":
-                                    expected_column = data_column_pattern 
+                                # Now, check for similarity against the SAFE columns
+                                if section_context == "procedure_information" or section_context == "miscellaneous_information":
+                                     expected_column = expected_col_pattern
                                 else:
-                                    section_prefix = section_context.split('_')[0].capitalize()
-                                    expected_column = f"{section_prefix} {data_column_pattern}".strip()
+                                     section_prefix = section_context.split('_')[0].capitalize()
+                                     expected_column = f"{section_prefix} {expected_col_pattern}".strip()
 
-                                for data_col in data_columns:
-                                    if data_col in used_columns:
-                                        continue
-                                    if self.preprocess_text(data_col) == self.preprocess_text(expected_column):
-                                        best_match = data_col
-                                        best_score = 1.0
-                                        break
+                                similarity = self.calculate_similarity(expected_column, data_col)
+                                if similarity > best_score and similarity >= self.similarity_threshold:
+                                    best_score = similarity
+                                    best_match = data_col
+                            break # Move to the next field once the best match for this rule is found
 
-                                if not best_match:
-                                    for data_col in data_columns:
-                                        if data_col in used_columns:
-                                            continue
-                                        similarity = self.calculate_similarity(expected_column, data_col)
-                                        if similarity > best_score and similarity >= self.similarity_threshold:
-                                            best_score = similarity
-                                            best_match = data_col
-                                break
+                # --- STAGE 2: Fallback General Similarity (only if stage 1 found nothing) ---
+                if not best_match:
+                    for data_col in data_columns:
+                        if data_col in used_columns:
+                            continue
+                        
+                        # Apply exclusions here as well for safety
+                        preprocessed_data_col = self.preprocess_text(data_col)
+                        if any(excl_word in preprocessed_data_col for excl_word in exclusions):
+                            continue
 
-                    # Fallback logic (same as original)
-                    if not best_match:
-                        for data_col in data_columns:
-                            if data_col in used_columns:
-                                continue
-                            similarity = self.calculate_similarity(field_value, data_col)
-                            if similarity > best_score and similarity >= self.similarity_threshold:
-                                best_score = similarity
-                                best_match = data_col
+                        similarity = self.calculate_similarity(field_value, data_col)
+                        if similarity > best_score and similarity >= self.similarity_threshold:
+                            best_score = similarity
+                            best_match = data_col
 
-                    mapping_results[coord] = {
-                        'template_field': field_value,
-                        'data_column': best_match,
-                        'similarity': best_score,
-                        'field_info': field,
-                        'section_context': section_context,
-                        'is_mappable': best_match is not None
-                    }
+                # Store the final result for this field
+                mapping_results[coord] = {
+                    'template_field': field_value,
+                    'data_column': best_match,
+                    'similarity': best_score,
+                    'field_info': field,
+                    'section_context': section_context,
+                    'is_mappable': best_match is not None
+                }
+                if best_match:
+                    used_columns.add(best_match)
 
-                    if best_match:
-                        used_columns.add(best_match)
-
-                except Exception as e:
-                    st.error(f"Error mapping field {coord}: {e}")
-                    continue
-
-        except Exception as e:
-            st.error(f"Error in map_data_with_section_context_for_row: {e}")
-
+            except Exception as e:
+                st.error(f"Error mapping field {coord} ('{field.get('value', 'N/A')}'): {e}")
+                continue
+        
         return mapping_results
     
     def write_filled_steps_to_template(self, worksheet, filled_steps):
