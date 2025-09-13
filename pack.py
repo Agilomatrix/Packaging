@@ -1855,9 +1855,9 @@ class EnhancedTemplateMapperWithImages:
                     st.write("⚠️ No procedure steps to process for this row")
                 
                 # Generate filename
-                vendor_code = filename_parts.get('vendor_code', 'Unknown')
-                part_no = filename_parts.get('part_no', 'Unknown') 
-                description = filename_parts.get('description', 'Unknown')
+                vendor_code = filename_parts.get('vendor_code', 'NoVendor')
+                part_no = filename_parts.get('part_no', 'NoPart')
+                description = filename_parts.get('description', 'NoDesc')
         
                 # Clean filename parts
                 vendor_code = re.sub(r'[^\w\-_]', '', str(vendor_code))[:10]
@@ -2986,22 +2986,33 @@ def main():
                                     vendor_code = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
                                     part_no = file_info['row_info'].get('part_no', 'Unknown_Part')
                                     part_desc = file_info['row_info'].get('part_desc', 'Unknown_Desc')
+                
                                     # Clean the strings for safe file/folder names
                                     vendor_safe = re.sub(r'[^\w\-_.]', '_', str(vendor_code))
                                     part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
                                     part_desc_safe = re.sub(r'[^\w\-_.]', '_', str(part_desc))
+                
                                     # Create folder name: vendor_code_partno_partdesc
                                     folder_name = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}"
+                
                                     if folder_name not in vendor_folders:
                                         vendor_folders[folder_name] = []
                                     vendor_folders[folder_name].append(file_info)
-                                    # Add files organized by custom folder names
+        
+                                # Add files organized by custom folder names
                                 for folder_name, files in vendor_folders.items():
                                     for file_info in files:
                                         # Extract info for custom filename
                                         vendor_code = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
                                         part_no = file_info['row_info'].get('part_no', 'Unknown_Part') 
-                                        part_desc = file_info['row_info'].get('part_desc', 'Unknown_Desc')
+                    
+                                        # Try common variations of part description field names
+                                        part_desc = (file_info['row_info'].get('part_desc') or 
+                                                     file_info['row_info'].get('part_description') or
+                                                     file_info['row_info'].get('description') or
+                                                     file_info['row_info'].get('part_name') or
+                                                    'Unknown_Desc')
+                    
                                         # Clean for filename
                                         vendor_safe = re.sub(r'[^\w\-_.]', '_', str(vendor_code))
                                         part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
@@ -3035,19 +3046,18 @@ def main():
     
                             zip_buffer.seek(0)
     
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.info("📁 Organized by vendor_partno_partdesc folders with custom filenames")
-    
-                        with col2:
-                            st.download_button(
-                                label="📦 Download All Templates (ZIP)",
-                                data=zip_buffer.getvalue(),
-                                file_name=f"Enhanced_Templates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                                mime="application/zip",
-                                key="download_enhanced_zip",
-                                use_container_width=True
-                        )
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.info("📁 Organized by vendor_partno_partdesc folders with custom filenames")
+                            with col2:
+                                st.download_button(
+                                    label="📦 Download All Templates (ZIP)",
+                                    data=zip_buffer.getvalue(),
+                                    file_name=f"Enhanced_Templates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                                    mime="application/zip",
+                                    key="download_enhanced_zip",
+                                    use_container_width=True
+                                )
                 
                     with tab3:
                         # Detailed generation report
