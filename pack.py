@@ -1855,9 +1855,14 @@ class EnhancedTemplateMapperWithImages:
                     st.write("⚠️ No procedure steps to process for this row")
                 
                 # Generate filename
-                vendor_code = filename_parts.get('vendor_code', 'NoVendor')
-                part_no = filename_parts.get('part_no', 'NoPart')
-                description = filename_parts.get('description', 'NoDesc')
+                if 'vencode_partno_desc' in row:   # <-- if Excel has this column
+                    filename = f"{vendor}_{partno}_{desc}.xlsx"
+                elif 'partno_desc' in row:         # <-- if Excel has this column
+                    filename = f"{partno}_{desc}.xlsx"
+                else:
+                    filename = f"{vendor}_{partno}_{desc}.xlsx"
+                output_path = os.path.join(output_dir, filename)
+                workbook.save(output_path)
         
                 # Clean filename parts
                 vendor_code = re.sub(r'[^\w\-_]', '', str(vendor_code))[:10]
