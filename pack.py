@@ -2980,68 +2980,31 @@ def main():
                             # Create ZIP with organized structure
                             zip_buffer = io.BytesIO()
                             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                                # Organize by vendor with custom naming
-                                vendor_folders = {}
+                                
+                                # Add files to the zip
                                 for file_info in generated_files:
+                                    # --- START: CORRECTED LOGIC ---
+                                    # Directly get the already-processed values from row_info
                                     vendor_code = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
                                     part_no = file_info['row_info'].get('part_no', 'Unknown_Part')
-                                    part_desc = file_info['row_info'].get('part_desc', 'Unknown_Desc')
-                
+                                    part_desc = file_info['row_info'].get('description', 'Unknown_Desc')
+
                                     # Clean the strings for safe file/folder names
                                     vendor_safe = re.sub(r'[^\w\-_.]', '_', str(vendor_code))
                                     part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
                                     part_desc_safe = re.sub(r'[^\w\-_.]', '_', str(part_desc))
-                
-                                    # Create folder name: vendor_code_partno_partdesc
-                                    folder_name = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}"
-                
-                                    if folder_name not in vendor_folders:
-                                        vendor_folders[folder_name] = []
-                                    vendor_folders[folder_name].append(file_info)
-        
-                                # Add files organized by custom folder names
-                                for folder_name, files in vendor_folders.items():
-                                    for file_info in files:
-                                        # Extract info for custom filename
-                                        # Try multiple possible field names for vendor code
-                                        possible_vendor_fields = ['vendor_code', 'vendor','Vendor Code', 'supplier', 'manufacturer']
-                                        vendor_code = 'Unknown_Vendor'
-                                        for field in possible_vendor_fields:
-                                            if field in file_info.get('row_info', {}) and file_info['row_info'][field]:
-                                                vendor_code = file_info['row_info'][field]
-                                                break
-                    
-                                        # Try multiple possible field names for part number
-                                        possible_part_fields = ['part_no', 'part_number', 'item_no', 'item_number', 'product_no', 'sku', 'material_no',"Part No."]
-                                        part_no = 'Unknown_Part'
-                                        for field in possible_part_fields:
-                                            if field in file_info.get('row_info', {}) and file_info['row_info'][field]:
-                                                part_no = file_info['row_info'][field]
-                                                break
-                    
-                                        # Try multiple possible field names for part description
-                                        possible_desc_fields = ['part_desc', 'part_description', 'description', 'part_name', 
-                                                                'item_description', 'product_description', 'name', 'item_name', 
-                                                                'product_name', 'desc', 'item_desc', 'material_description',
-                                                                'description','Description','component_description', 'product_desc', 'material_name', 'component_name']
-                    
-                                        part_desc = 'Unknown_Desc'
-                                        for field in possible_desc_fields:
-                                            if field in file_info.get('row_info', {}) and file_info['row_info'][field]:
-                                                part_desc = file_info['row_info'][field]
-                                                break
-                    
-                                        # Clean for filename
-                                        vendor_safe = re.sub(r'[^\w\-_.]', '_', str(vendor_code))
-                                        part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
-                                        part_desc_safe = re.sub(r'[^\w\-_.]', '_', str(part_desc))
-                    
-                                        # Create custom filename: vendor_code_partno_partdesc.xlsx
-                                        custom_filename = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}.xlsx"
-                    
-                                        # Path in ZIP: folder_name/custom_filename
-                                        zip_path = f"{folder_name}/{custom_filename}"
-                                        zip_file.writestr(zip_path, file_info['data'])
+
+                                    # Create a unique folder for each part to avoid overwrites
+                                    folder_name = f"{vendor_safe}_{part_no_safe}"
+                                    
+                                    # Create custom filename: vendor_code_partno_partdesc.xlsx
+                                    custom_filename = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}.xlsx"
+
+                                    # Path in ZIP: folder_name/custom_filename
+                                    zip_path = f"{folder_name}/{custom_filename}"
+                                    zip_file.writestr(zip_path, file_info['data'])
+                                    # --- END: CORRECTED LOGIC ---
+
                                 # Add generation report
                                 report_content = "Template Generation Report\n"
                                 report_content += "=" * 40 + "\n\n"
@@ -3049,7 +3012,7 @@ def main():
                                 report_content += f"Total templates: {len(generated_files)}\n"
                                 report_content += f"Total images placed: {total_images_placed}\n"
                                 report_content += f"Placement method: {'Smart Analysis' if use_smart_placement else 'Fixed Positions'}\n\n"
-        
+
                                 report_content += "Individual Template Details:\n"
                                 report_content += "-" * 30 + "\n"
                                 for log_entry in generation_log:
@@ -3058,15 +3021,15 @@ def main():
                                     report_content += f"  Vendor: {log_entry['vendor']}\n"
                                     report_content += f"  Images Added: {log_entry['images_added']}\n"
                                     report_content += f"  Method: {log_entry['placement_method']}\n\n"
-        
+
                                 zip_file.writestr("Generation_Report.txt", report_content)
-    
+
                             zip_buffer.seek(0)
-    
+
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.info("📁 Organized by vendor_partno_partdesc folders with custom filenames")
-    
+                                st.info("📁 Organized by vendor_partno folders with custom filenames")
+
                             with col2:
                                 st.download_button(
                                     label="📦 Download All Templates (ZIP)",
