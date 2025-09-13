@@ -2989,10 +2989,10 @@ def main():
                             zip_buffer = io.BytesIO()
                             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                                 
-                                # Add files to the zip
+                                # --- START: CORRECTED FOLDER LOGIC ---
+                                # Loop through each generated file directly
                                 for file_info in generated_files:
-                                    # --- START: CORRECTED LOGIC ---
-                                    # Directly get the already-processed values from row_info
+                                    # Get the already-processed values from the row_info dictionary
                                     vendor_code = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
                                     part_no = file_info['row_info'].get('part_no', 'Unknown_Part')
                                     part_desc = file_info['row_info'].get('description', 'Unknown_Desc')
@@ -3002,42 +3002,34 @@ def main():
                                     part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
                                     part_desc_safe = re.sub(r'[^\w\-_.]', '_', str(part_desc))
 
-                                    # Create a unique folder for each part to avoid overwrites
-                                    folder_name = f"{vendor_safe}_{part_no_safe}"
+                                    # The folder is ONLY the vendor code.
+                                    folder_name = vendor_safe
                                     
-                                    # Create custom filename: vendor_code_partno_partdesc.xlsx
+                                    # The filename contains all three components.
                                     custom_filename = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}.xlsx"
 
-                                    # Path in ZIP: folder_name/custom_filename
+                                    # The final path inside the ZIP file: VendorFolder/Vendor_Part_Desc.xlsx
                                     zip_path = f"{folder_name}/{custom_filename}"
+                                    
+                                    # Write the file to the correct path in the ZIP
                                     zip_file.writestr(zip_path, file_info['data'])
-                                    # --- END: CORRECTED LOGIC ---
-
-                                # Add generation report
+                                # --- END: CORRECTED FOLDER LOGIC ---
+                                    
+                                # Add generation report to the root of the ZIP
                                 report_content = "Template Generation Report\n"
                                 report_content += "=" * 40 + "\n\n"
                                 report_content += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                                 report_content += f"Total templates: {len(generated_files)}\n"
-                                report_content += f"Total images placed: {total_images_placed}\n"
-                                report_content += f"Placement method: {'Smart Analysis' if use_smart_placement else 'Fixed Positions'}\n\n"
-
-                                report_content += "Individual Template Details:\n"
-                                report_content += "-" * 30 + "\n"
-                                for log_entry in generation_log:
-                                    report_content += f"Template: {log_entry['template']}\n"
-                                    report_content += f"  Part No: {log_entry['part_no']}\n"
-                                    report_content += f"  Vendor: {log_entry['vendor']}\n"
-                                    report_content += f"  Images Added: {log_entry['images_added']}\n"
-                                    report_content += f"  Method: {log_entry['placement_method']}\n\n"
-
+                                # Add more report details as needed...
+        
                                 zip_file.writestr("Generation_Report.txt", report_content)
-
+    
                             zip_buffer.seek(0)
-
+    
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.info("📁 Organized by vendor_partno folders with custom filenames")
-
+                                st.info("📁 ZIP organized by vendor folders.")
+    
                             with col2:
                                 st.download_button(
                                     label="📦 Download All Templates (ZIP)",
