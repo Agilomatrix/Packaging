@@ -983,7 +983,7 @@ class EnhancedTemplateMapperWithImages:
                     'inner quantity': 'Inner Qty/Pack',
                     'inner qty': 'Inner Qty/Pack'
                 }
-            }
+            },
             'miscellaneous_information': {
                 'section_keywords': ['problems if any', 'remarks', 'notes'],
                 'field_mappings': {
