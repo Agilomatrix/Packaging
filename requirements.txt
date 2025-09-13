@@ -1,0 +1,16 @@
+streamlit
+pandas
+numpy
+openpyxl
+nltk
+scikit-learn
+pathlib2
+python-dateutil
+pytz
+pytest
+black
+flake8
+bcrypt
+xlsxwriter
+regex
+psutil
