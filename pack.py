@@ -984,6 +984,14 @@ class EnhancedTemplateMapperWithImages:
                     'inner qty': 'Inner Qty/Pack'
                 }
             }
+            'miscellaneous_information': {
+                'section_keywords': ['problems if any', 'remarks', 'notes'],
+                'field_mappings': {
+                    'problems if any': 'Problems',  # Maps template label to data column "Problems"
+                    'problems': 'Problems',
+                    'remarks': 'Remarks'
+                }
+            }
         }
 
     def preprocess_text(self, text):
@@ -1055,7 +1063,8 @@ class EnhancedTemplateMapperWithImages:
                 r'\bouter\s*l\b', r'\bouter\s*length\b',
                 r'\bouter\s*w\b', r'\bouter\s*width\b',
                 r'\bouter\s*h\b', r'\bouter\s*height\b',
-                r'\bpallet\b', r'\bpalletiz\w*\b'
+                r'\bpallet\b', r'\bpalletiz\w*\b',
+                r'\bproblems\b' 
             ]
         
             for pattern in mappable_patterns:
@@ -1213,17 +1222,38 @@ class EnhancedTemplateMapperWithImages:
         return fields, image_areas
 
     def find_data_cell_for_label(self, worksheet, field_info):
-        """Find data cell for a label with improved merged cell handling"""
+        """
+        Find data cell for a label, with special handling for the 'Problems' field
+        and safer, constrained search for all other fields.
+        """
         try:
             row = field_info['row']
             col = field_info['column']
-            merged_ranges = list(worksheet.merged_cells.ranges)
-        
-            def is_suitable_data_cell(cell_coord):
-                """Check if a cell is suitable for data entry"""
+            field_text_lower = self.preprocess_text(field_info.get('value', ''))
+
+            # --- SPECIAL CASE: Handle "PROBLEMS IF ANY" field directly ---
+            if 'problems' in field_text_lower:
+                # Based on the template, the label is at V23, and the green cell starts at V25.
+                # This is a fixed position relative to the label: (row + 2, same column).
+                target_cell_coord = worksheet.cell(row=row + 2, column=col).coordinate
+                st.write(f"INFO: Found 'Problems' field. Targeting specific cell: {target_cell_coord}")
+                return target_cell_coord
+
+            # --- STANDARD PLACEMENT LOGIC FOR ALL OTHER FIELDS ---
+
+            # Define columns to be explicitly ignored for general placement.
+            # The special case above runs first, so this won't block the 'Problems' field.
+            IGNORED_COLUMNS = [22, 23, 24, 25] # V, W, X, Y
+
+            def is_suitable_data_cell(r, c):
+                """Check if a cell at a given row and column is suitable for data entry."""
+                if not (1 <= r <= worksheet.max_row and 1 <= c <= worksheet.max_column):
+                    return False
+                if c in IGNORED_COLUMNS:
+                    return False
                 try:
-                    cell = worksheet[cell_coord]
-                    if hasattr(cell, '__class__') and cell.__class__.__name__ == 'MergedCell':
+                    cell = worksheet.cell(row=r, column=c)
+                    if isinstance(cell, openpyxl.cell.cell.MergedCell):
                         return False
                     if cell.value is None or str(cell.value).strip() == "":
                         return True
@@ -1232,41 +1262,22 @@ class EnhancedTemplateMapperWithImages:
                     return any(re.search(pattern, cell_text) for pattern in data_patterns)
                 except:
                     return False
-            
-            # Strategy 1: Look right of label (most common pattern)
+
+            # Strategy 1: Look RIGHT of the label (up to 5 cells)
             for offset in range(1, 6):
-                target_col = col + offset
-                if target_col <= worksheet.max_column:
-                    cell_coord = worksheet.cell(row=row, column=target_col).coordinate
-                    if is_suitable_data_cell(cell_coord):
-                        return cell_coord
+                if is_suitable_data_cell(row, col + offset):
+                    return worksheet.cell(row=row, column=col + offset).coordinate
             
-            # Strategy 2: Look below label
-            for offset in range(1, 4):
-                target_row = row + offset
-                if target_row <= worksheet.max_row:
-                    cell_coord = worksheet.cell(row=target_row, column=col).coordinate
-                    if is_suitable_data_cell(cell_coord):
-                        return cell_coord
-            
-            # Strategy 3: Look in nearby area
-            for r_offset in range(-1, 3):
-                for c_offset in range(-1, 6):
-                    if r_offset == 0 and c_offset == 0:
-                        continue
-                    target_row = row + r_offset
-                    target_col = col + c_offset
-                
-                    if (target_row > 0 and target_row <= worksheet.max_row and 
-                        target_col > 0 and target_col <= worksheet.max_column):
-                            cell_coord = worksheet.cell(row=target_row, column=target_col).coordinate
-                            if is_suitable_data_cell(cell_coord):
-                                return cell_coord
-            
+            # Strategy 2: Look IMMEDIATELY BELOW the label (1 cell)
+            if is_suitable_data_cell(row + 1, col):
+                return worksheet.cell(row=row + 1, column=col).coordinate
+
+            # If no suitable cell is found, give up to prevent errors.
+            st.write(f"WARNING: Could not find a safe data cell for label '{field_info['value']}'. Skipping placement.")
             return None
             
         except Exception as e:
-            st.error(f"Error in find_data_cell_for_label: {e}")
+            st.error(f"Error in find_data_cell_for_label for '{field_info.get('value', 'N/A')}': {e}")
             return None
 
     # *** NEW METHOD: Read procedure steps from Excel template ***
