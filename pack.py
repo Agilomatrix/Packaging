@@ -1997,7 +1997,7 @@ class EnhancedTemplateMapperWithImages:
             st.error(f"Error in map_data_with_section_context_for_row: {e}")
 
         return mapping_results
-    
+
     def write_filled_steps_to_template(self, worksheet, filled_steps):
         """Write filled procedure steps to merged cells B to P starting from Row 28"""
         try:
@@ -2009,10 +2009,41 @@ class EnhancedTemplateMapperWithImages:
 
             start_row = 28
             target_col = 2  # Column B
-            end_col = 18    # Column P
+            end_col = 18    # Column R
+
+            # ==============================================================================
+            # START OF THE FIX: Add this code block to clear old placeholders
+            # ==============================================================================
+            # Proactively clear a block of rows to remove any old placeholder data
+            # This prevents leftover steps from the original template appearing in the output.
+            max_procedure_rows_to_clear = 50 # A safe, large number of rows to clear
+            print(f"🧹 Clearing placeholder area from row {start_row} to {start_row + max_procedure_rows_to_clear - 1}")
+            for row_num in range(start_row, start_row + max_procedure_rows_to_clear):
+                try:
+                    # Check if the row has a merged cell range (B:R) and unmerge it first
+                    merge_range_to_check = f"B{row_num}:R{row_num}"
+                    if merge_range_to_check in worksheet.merged_cells:
+                        worksheet.unmerge_cells(merge_range_to_check)
+                        print(f"🔧 Unmerged pre-existing range: {merge_range_to_check}")
+
+                    # Clear the content of all cells in the target columns for this row
+                    for col_num in range(target_col, end_col + 1):
+                        cell = worksheet.cell(row=row_num, column=col_num)
+                        if cell:
+                            cell.value = None
+                            
+                    # Optional: Reset row height to a default value
+                    if row_num in worksheet.row_dimensions:
+                        worksheet.row_dimensions[row_num].height = 15 # Default height
+
+                except Exception as clear_error:
+                    # This might fail on rows without any formatting, which is fine.
+                    print(f"⚠️ Warning during proactive clearing of row {row_num}: {clear_error}")
+                    continue
 
             steps_written = 0
 
+            # This existing loop will now write onto a clean area
             for i, step in enumerate(filled_steps):
                 step_row = start_row + i
                 step_text = step.strip()
@@ -2023,14 +2054,15 @@ class EnhancedTemplateMapperWithImages:
                     break
             
                 try:
-                    # Define the merge range for this row (B to P)
+                    # Define the merge range for this row (B to R)
                     merge_range = f"B{step_row}:R{step_row}"
                     target_cell = worksheet.cell(row=step_row, column=target_col)
                 
                     print(f"📝 Writing filled step {i + 1} to {merge_range}: {step_text[:50]}...")
                     st.write(f"📝 Step {i + 1} -> {merge_range}: {step_text[:50]}...")
 
-                    # Unmerge any existing ranges that might conflict
+                    # This part of the original code is redundant because of the clearing block above,
+                    # but it is harmless to leave it. It ensures each specific row is unmerged before writing.
                     existing_merged_ranges = []
                     for merged_range in list(worksheet.merged_cells.ranges):
                         if (merged_range.min_row <= step_row <= merged_range.max_row and
@@ -2054,7 +2086,7 @@ class EnhancedTemplateMapperWithImages:
                     target_cell.font = Font(name='Calibri', size=10)
                     target_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
 
-                    # Merge the cells B to P for this row
+                    # Merge the cells B to R for this row
                     try:
                         worksheet.merge_cells(merge_range)
                         print(f"✅ Merged range: {merge_range}")
