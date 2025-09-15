@@ -1281,31 +1281,38 @@ class EnhancedTemplateMapperWithImages:
     # *** NEW METHOD: Read procedure steps from Excel template ***
     def read_procedure_steps_from_template(self, template_path, packaging_type=None):
         """
-        Read procedure steps directly from the Excel template.
-        Args:
-            template_path: Path to the Excel templat
-            packaging_type: Optional packaging type to filter steps
-        Returns:
-            List of procedure steps with {placeholders}
+        Read procedure steps directly from the Excel template with intelligent header filtering.
         """
         try:
-            print(f"\n=== READING PROCEDURE STEPS FROM TEMPLATE ===")
+            print("\n=== READING PROCEDURE STEPS FROM TEMPLATE (ENHANCED) ===")
             st.write(f"📖 Reading procedure steps from template...")
         
             workbook = openpyxl.load_workbook(template_path)
             worksheet = workbook.active
         
             procedure_steps = []
-            start_row = 28  # Based on your original code
-            target_cols = list(range(2, 19))  # Columns B to P (2 to 16)
-            max_search_rows = 50  # Search up to 50 rows
-            empty_count = 0       # track consecutive empty rows
+            start_row = 28
+            target_cols = list(range(2, 19))  # Columns B to R
+            max_search_rows = 50
+            empty_count = 0
+
+            # ==============================================================================
+            # START OF THE FIX: Add a list of keywords to identify and exclude headers
+            # ==============================================================================
+            header_exclusion_keywords = [
+                'packaging', 'instruction', 'procedure', 'primary', 'secondary', 
+                'label', 'barcode', 'vendor', 'supplier', 'part info', 
+                'general information', 'palletization', 'loading details'
+            ]
+            print(f"ℹ️ Will exclude lines containing keywords: {header_exclusion_keywords}")
+            # ==============================================================================
+            # END OF THE FIX
+            # ==============================================================================
             
             for row_num in range(start_row, start_row + max_search_rows):
                 try:
                     row_has_content = False
                     step_text = ""
-                    # Look for content in columns B to P
                     for col_num in target_cols:
                         try:
                             cell = worksheet.cell(row=row_num, column=col_num)
@@ -1317,26 +1324,34 @@ class EnhancedTemplateMapperWithImages:
                                     break
                         except:
                             continue
+
                     if row_has_content and step_text:
-                        # Clean and validate the step text
                         step_text = step_text.strip()
-                    
+                        step_text_lower = step_text.lower() # For case-insensitive matching
+
+                        # ==============================================================================
+                        # START OF THE FIX: Check if the found text is a header and skip it
+                        # ==============================================================================
+                        # If the text contains any of the exclusion keywords, it's likely a header, not a step.
+                        if any(keyword in step_text_lower for keyword in header_exclusion_keywords):
+                            print(f"🚫 Skipping row {row_num} as it looks like a header: '{step_text}'")
+                            continue # Skip to the next row
+                        # ==============================================================================
+                        # END OF THE FIX
+                        # ==============================================================================
+
                         # Skip obviously non-procedure content
-                        skip_patterns = [
-                            r'^[0-9]+$',  # Just numbers
-                            r'^[A-Z]$',   # Single letters
-                            r'^[-_=]+$',  # Just separators
-                        ]
-                    
+                        skip_patterns = [r'^[0-9]+$', r'^[A-Z]$', r'^[-_=]+$']
                         should_skip = any(re.match(pattern, step_text) for pattern in skip_patterns)
                     
-                        if not should_skip and len(step_text) > 5:  # Minimum length check
+                        if not should_skip and len(step_text) > 5:
                             procedure_steps.append(step_text)
                             print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
-                        empty_count = 0  # reset empty counter after a valid step
+                        
+                        empty_count = 0
                     else:
                         empty_count += 1
-                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                        if empty_count >= 3:
                             break
                 except Exception as e:
                     print(f"⚠️ Error reading row {row_num}: {e}")
@@ -1346,7 +1361,6 @@ class EnhancedTemplateMapperWithImages:
             print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
             st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
         
-            # Debug: Show found steps
             for i, step in enumerate(procedure_steps, 1):
                 print(f"  Step {i}: {step[:100]}...")
             return procedure_steps
