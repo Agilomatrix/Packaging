@@ -1283,74 +1283,81 @@ class EnhancedTemplateMapperWithImages:
     # *** NEW METHOD: Read procedure steps from Excel template ***
     def read_procedure_steps_from_template(self, template_path, packaging_type=None):
         """
-        Read procedure steps directly from the Excel template.
-        Args:
-            template_path: Path to the Excel templat
-            packaging_type: Optional packaging type to filter steps
-        Returns:
-            List of procedure steps with {placeholders}
+        Reads procedure steps by respecting the visual structure and boundaries of the template.
+        This version STOPS reading when it hits the "Reference Image" section.
         """
         try:
-            print(f"\n=== READING PROCEDURE STEPS FROM TEMPLATE ===")
+            print("\n=== READING PROCEDURE STEPS (STRUCTURAL AWARENESS VERSION) ===")
             st.write(f"📖 Reading procedure steps from template...")
         
             workbook = openpyxl.load_workbook(template_path)
             worksheet = workbook.active
         
             procedure_steps = []
-            start_row = 28  # Based on your original code
-            target_cols = list(range(2, 19))  # Columns B to P (2 to 16)
-            max_search_rows = 50  # Search up to 50 rows
-            empty_count = 0       # track consecutive empty rows
-            
+            start_row = 28  # The row where "Packaging Procedure" starts
+            max_search_rows = 50 
+            empty_row_limit = 3
+            empty_row_counter = 0
+
+            # --- DEFINITIVE FIX: Define boundary keywords that MUST stop the process ---
+            # From your screenshot, "Reference Image/Pictures" is the hard stop signal.
+            boundary_keywords = ["reference image", "pictures", "image/pictures"]
+
+            # Search starts from row 28
             for row_num in range(start_row, start_row + max_search_rows):
-                try:
-                    row_has_content = False
-                    step_text = ""
-                    # Look for content in columns B to P
-                    for col_num in target_cols:
-                        try:
-                            cell = worksheet.cell(row=row_num, column=col_num)
-                            if cell.value and str(cell.value).strip():
-                                cell_text = str(cell.value).strip()
-                                if cell_text and not cell_text.isspace():
-                                    step_text = cell_text
-                                    row_has_content = True
-                                    break
-                        except:
-                            continue
-                    if row_has_content and step_text:
-                        # Clean and validate the step text
-                        step_text = step_text.strip()
-                    
-                        # Skip obviously non-procedure content
-                        skip_patterns = [
-                            r'^[0-9]+$',  # Just numbers
-                            r'^[A-Z]$',   # Single letters
-                            r'^[-_=]+$',  # Just separators
-                        ]
-                    
-                        should_skip = any(re.match(pattern, step_text) for pattern in skip_patterns)
-                    
-                        if not should_skip and len(step_text) > 5:  # Minimum length check
-                            procedure_steps.append(step_text)
-                            print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
-                        empty_count = 0  # reset empty counter after a valid step
-                    else:
-                        empty_count += 1
-                        if empty_count >= 3:  # stop after 3 consecutive empty rows
-                            break
-                except Exception as e:
-                    print(f"⚠️ Error reading row {row_num}: {e}")
-                    continue
+                # 1. --- Boundary Check ---
+                # Before doing anything else, scan the first few cells of the row for a stop signal.
+                is_boundary_found = False
+                for col_num in range(1, 10): # Check columns A to J
+                    try:
+                        cell = worksheet.cell(row=row_num, column=col_num)
+                        if cell.value and isinstance(cell.value, str):
+                            cell_text_lower = cell.value.lower().strip()
+                            if any(keyword in cell_text_lower for keyword in boundary_keywords):
+                                print(f"✅ Boundary found at row {row_num} with text: '{cell.value}'. STOPPING step search.")
+                                is_boundary_found = True
+                                break # Exit the column check loop
+                    except:
+                        continue
+                if is_boundary_found:
+                    break # Exit the main row search loop. THIS PREVENTS READING ANY FURTHER.
+
+                # 2. --- Step Text Extraction (if not a boundary) ---
+                step_text = ""
+                row_has_content = False
+                # Focus only on the columns where the actual step text is (e.g., B, C, D)
+                for col_num in range(2, 5): 
+                    try:
+                        cell = worksheet.cell(row=row_num, column=col_num)
+                        if cell.value and isinstance(cell.value, str) and str(cell.value).strip():
+                            # This handles merged cells by getting value from top-left
+                            text_value = str(cell.value).strip()
+                            if text_value:
+                                step_text = text_value
+                                row_has_content = True
+                                break # Found the text for this row, no need to check other columns
+                    except:
+                        continue
+
+                # 3. --- Process Found Text ---
+                if row_has_content:
+                    # Add the step and reset the counter for empty rows
+                    if step_text not in procedure_steps:
+                        procedure_steps.append(step_text)
+                        print(f"📝 Found step {len(procedure_steps)}: {step_text[:60]}...")
+                    empty_row_counter = 0
+                else:
+                    # This row was empty, increment the counter
+                    empty_row_counter += 1
+                    if empty_row_counter >= empty_row_limit:
+                        print(f"✅ Found {empty_row_limit} consecutive empty rows. Stopping step search.")
+                        break
+            
             workbook.close()
         
-            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            print(f"✅ FINAL COUNT: Successfully read {len(procedure_steps)} procedure steps.")
             st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
         
-            # Debug: Show found steps
-            for i, step in enumerate(procedure_steps, 1):
-                print(f"  Step {i}: {step[:100]}...")
             return procedure_steps
         except Exception as e:
             print(f"❌ Error reading procedure steps from template: {e}")
@@ -2047,7 +2054,7 @@ class EnhancedTemplateMapperWithImages:
                             print(f"⚠️ Warning: Could not unmerge {merged_range}: {unmerge_error}")
 
                     # Clear any existing content in the range
-                    for col in range(target_col, end_col):
+                    for col in range(target_col, end_col + 1):
                         cell = worksheet.cell(row=step_row, column=col)
                         cell.value = None
 
