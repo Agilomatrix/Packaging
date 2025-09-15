@@ -3010,7 +3010,11 @@ def main():
 
                                     # The folder is ONLY the vendor code.
                                     folder_name = vendor_safe
-                                    
+                                    unique_filename = file_info['filename']
+                                    # The final path inside the ZIP file is now unique
+                                    zip_path = f"{folder_name}/{unique_filename}"
+                                    # Write the file to the correct unique path in the ZIP
+                                    zip_file.writestr(zip_path, file_info['data'])
                                     # The filename contains all three components.
                                     custom_filename = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}.xlsx"
 
