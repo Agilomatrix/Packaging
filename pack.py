@@ -1011,53 +1011,72 @@ class EnhancedTemplateMapperWithImages:
             return ""
 
     def is_mappable_field(self, text):
-        """Smarter field detection that ignores long sentences (procedure steps)."""
+        """Enhanced field detection for packaging templates"""
         try:
             if not text or pd.isna(text):
                 return False
-            
-            text_clean = str(text).strip()
-            text_lower = text_clean.lower()
-            word_count = len(text_clean.split())
-
-            if not text_lower:
+            text = str(text).lower().strip()
+            if not text:
                 return False
+            print(f"DEBUG is_mappable_field: Checking '{text}'")
 
-            # --- High-Confidence Check ---
-            # Field labels are usually short and often end with a colon.
-            # If a text is long (like a sentence), it's almost certainly NOT a field label.
-            if word_count > 10:
-                print(f"DEBUG: Skipping '{text_lower}' as it's too long to be a field label.")
-                return False
-
-            # --- Exclusion Check ---
-            # Exclude section headers specifically.
+            # Skip header-like patterns that should not be treated as fields
             header_exclusions = [
                 'vendor information', 'part information', 'primary packaging', 'secondary packaging',
                 'packaging instruction', 'procedure', 'steps', 'process'
             ]
-            if any(exclusion in text_lower for exclusion in header_exclusions) and 'type' not in text_lower:
-                print(f"DEBUG: Excluding '{text_lower}' as it's a section header.")
-                return False
+            for exclusion in header_exclusions:
+                if exclusion in text and 'type' not in text:
+                    print(f"DEBUG: Excluding '{text}' as header")
+                    return False
         
-            # --- Pattern Matching Check (for short text only) ---
-            # Define patterns that are very likely to be field labels.
+            # Define mappable field patterns for packaging templates
             mappable_patterns = [
-                r'packaging\s+type', r'\btype\b', r'l[-\s]*mm', r'w[-\s]*mm', r'h[-\s]*mm',
-                r'\bqty[/\s]*pack', r'weight', r'\bcode\b', r'\bname\b', r'description',
-                r'location', r'part\s+no', r'part\s+number', r'\bdate\b', r'rev(ision)?\s*no',
-                r'level', r'layer', r'problems'
+                r'packaging\s+type', r'\btype\b',
+                r'\bl[-\s]*mm\b', r'\bw[-\s]*mm\b', r'\bh[-\s]*mm\b',
+                r'\bl\b', r'\bw\b', r'\bh\b',
+                r'part\s+l\b', r'part\s+w\b', r'part\s+h\b',
+                r'\blength\b', r'\bwidth\b', r'\bheight\b',
+                r'qty[/\s]*pack', r'quantity\b', r'weight\b', r'empty\s+weight',
+                r'\bcode\b', r'\bname\b', r'\bdescription\b', r'\blocation\b',
+                r'part\s+no\b', r'part\s+number\b',
+                r'\bdate\b',
+                r'\brev(ision)?\s*no\.?\b',
+                # Procedure-specific patterns
+                r'\bx\s*no\.?\s*of\s*parts\b',
+                r'\bx\s*no\s*of\s*parts\b',
+                r'\bx\s*number\s*of\s*parts\b',
+                r'\bno\.?\s*of\s*parts\b',
+                r'\bnumber\s*of\s*parts\b',
+                r'\bparts\s*per\s*pack\b',
+                r'\bparts\s*quantity\b',
+                r'\bqty\s*of\s*parts\b',
+                r'\blevel\b', r'\blevels\b',
+                r'\blayer\b', r'\blayers\b',
+                r'\bmax\s*level\b', r'\bmaximum\s*level\b',
+                r'\bmax\s*layer\b', r'\bmaximum\s*layer\b',
+                r'\bstacking\s*level\b', r'\bpallet\s*level\b',
+                r'\binner\s*l\b', r'\binner\s*length\b',
+                r'\binner\s*w\b', r'\binner\s*width\b', 
+                r'\binner\s*h\b', r'\binner\s*height\b',
+                r'\binner\s*qty[/\s]*pack\b',
+                r'\bouter\s*l\b', r'\bouter\s*length\b',
+                r'\bouter\s*w\b', r'\bouter\s*width\b',
+                r'\bouter\s*h\b', r'\bouter\s*height\b',
+                r'\bpallet\b', r'\bpalletiz\w*\b',
+                r'\bproblems\b' 
             ]
-            if any(re.search(pattern, text_lower) for pattern in mappable_patterns):
-                print(f"DEBUG: '{text_lower}' matches a known field pattern.")
+        
+            for pattern in mappable_patterns:
+                if re.search(pattern, text):
+                    print(f"DEBUG: '{text}' matches pattern '{pattern}'")
+                    return True
+        
+            if text.endswith(':'):
+                print(f"DEBUG: '{text}' ends with colon")
                 return True
         
-            # If it's short and ends with a colon, it's a mappable field.
-            if text_clean.endswith(':'):
-                print(f"DEBUG: '{text_lower}' is mappable because it ends with a colon.")
-                return True
-        
-            print(f"DEBUG: '{text_lower}' is NOT considered a mappable field.")
+            print(f"DEBUG: '{text}' is NOT mappable")
             return False
         except Exception as e:
             st.error(f"Error in is_mappable_field: {e}")
@@ -1262,66 +1281,82 @@ class EnhancedTemplateMapperWithImages:
             return None
 
     # *** NEW METHOD: Read procedure steps from Excel template ***
-    def write_filled_steps_to_template(self, worksheet, filled_steps):
-        """Write filled procedure steps to merged cells B to R starting from Row 28"""
+    def read_procedure_steps_from_template(self, template_path, packaging_type=None):
+        """
+        Read procedure steps directly from the Excel template.
+        Args:
+            template_path: Path to the Excel templat
+            packaging_type: Optional packaging type to filter steps
+        Returns:
+            List of procedure steps with {placeholders}
+        """
         try:
-            from openpyxl.styles import Font, Alignment
-
-            print("\n=== WRITING FILLED PROCEDURE STEPS ===")
-            st.write(f"🔄 Writing {len(filled_steps)} filled procedure steps to template")
-
-            start_row = 28
-            target_col = 2  # Column B
-            end_col = 18    # Column R
-            max_rows_to_clear = 50 # A safe number to clear old template placeholders
-
-            # --- Proactively clear the step area to prevent leftover data ---
-            print(f"🧹 Clearing placeholder area from row {start_row}...")
-            for row_num in range(start_row, start_row + max_rows_to_clear):
-                # Unmerge if a merge exists in this row (B:R)
-                merge_range_str = f"B{row_num}:R{row_num}"
-                if merge_range_str in worksheet.merged_cells:
-                    worksheet.unmerge_cells(merge_range_str)
-                # Clear content
-                for col_num in range(target_col, end_col + 1):
-                    worksheet.cell(row=row_num, column=col_num).value = None
-
-            # --- Write the new, filled steps ---
-            steps_written = 0
-            for i, step in enumerate(filled_steps):
-                step_row = start_row + i
-                step_text = step.strip()
-
-                try:
-                    merge_range = f"B{step_row}:R{step_row}"
-                    target_cell = worksheet.cell(row=step_row, column=target_col)
-                    
-                    # Write value to the top-left cell of the range
-                    target_cell.value = step_text
-                    target_cell.font = Font(name='Calibri', size=10)
-                    target_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
-
-                    # Merge the cells for this row
-                    worksheet.merge_cells(merge_range)
-  
-                    # Adjust row height based on text length for readability
-                    chars_per_line = 120  # Approximate characters that fit in the merged cell
-                    num_lines = max(1, (len(step_text) // chars_per_line) + 1)
-                    worksheet.row_dimensions[step_row].height = 15 * num_lines
-
-                    steps_written += 1
-                
-                except Exception as step_error:
-                    st.error(f"Error writing step {i + 1}: {step_error}")
-                    continue
-
-            st.success(f"✅ Successfully wrote {steps_written} filled procedure steps to template")
-            return steps_written
-
-        except Exception as e:
-            st.error(f"Critical error writing filled procedure steps: {e}")
-            return 0
+            print(f"\n=== READING PROCEDURE STEPS FROM TEMPLATE ===")
+            st.write(f"📖 Reading procedure steps from template...")
+        
+            workbook = openpyxl.load_workbook(template_path)
+            worksheet = workbook.active
+        
+            procedure_steps = []
+            start_row = 28  # Based on your original code
+            target_cols = list(range(2, 19))  # Columns B to P (2 to 16)
+            max_search_rows = 50  # Search up to 50 rows
+            empty_count = 0       # track consecutive empty rows
             
+            for row_num in range(start_row, start_row + max_search_rows):
+                try:
+                    row_has_content = False
+                    step_text = ""
+                    # Look for content in columns B to P
+                    for col_num in target_cols:
+                        try:
+                            cell = worksheet.cell(row=row_num, column=col_num)
+                            if cell.value and str(cell.value).strip():
+                                cell_text = str(cell.value).strip()
+                                if cell_text and not cell_text.isspace():
+                                    step_text = cell_text
+                                    row_has_content = True
+                                    break
+                        except:
+                            continue
+                    if row_has_content and step_text:
+                        # Clean and validate the step text
+                        step_text = step_text.strip()
+                    
+                        # Skip obviously non-procedure content
+                        skip_patterns = [
+                            r'^[0-9]+$',  # Just numbers
+                            r'^[A-Z]$',   # Single letters
+                            r'^[-_=]+$',  # Just separators
+                        ]
+                    
+                        should_skip = any(re.match(pattern, step_text) for pattern in skip_patterns)
+                    
+                        if not should_skip and len(step_text) > 5:  # Minimum length check
+                            procedure_steps.append(step_text)
+                            print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                        empty_count = 0  # reset empty counter after a valid step
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            break
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+            workbook.close()
+        
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+        
+            # Debug: Show found steps
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i}: {step[:100]}...")
+            return procedure_steps
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return []
+
     def substitute_placeholders_in_steps(self, procedure_steps, data_dict):
         """
         Replace placeholders in procedure steps with actual data values.
@@ -1965,112 +2000,96 @@ class EnhancedTemplateMapperWithImages:
 
         return mapping_results
     
-    def read_procedure_steps_from_template(self, template_path, packaging_type=None):
-        """
-        Read procedure steps directly from the Excel template with robust, multi-check header detection.
-        """
+    def write_filled_steps_to_template(self, worksheet, filled_steps):
+        """Write filled procedure steps to merged cells B to P starting from Row 28"""
         try:
-            print("\n=== READING PROCEDURE STEPS FROM TEMPLATE (ROBUST VERSION) ===")
-            st.write(f"📖 Reading procedure steps from template...")
-        
-            workbook = openpyxl.load_workbook(template_path)
-            worksheet = workbook.active
-        
-            procedure_steps = []
+            from openpyxl.cell import MergedCell
+            from openpyxl.styles import Font, Alignment
+
+            print(f"\n=== WRITING FILLED PROCEDURE STEPS ===")
+            st.write(f"🔄 Writing {len(filled_steps)} filled procedure steps to template")
+
             start_row = 28
-            target_cols = list(range(2, 19))  # Columns B to R
-            max_search_rows = 50
-            empty_count = 0
+            target_col = 2  # Column B
+            end_col = 18    # Column P
 
-            # --- HELPER FUNCTION FOR ROBUST HEADER DETECTION ---
-            def is_likely_a_header(text):
-                """
-                Determines if a line of text is a header rather than a procedural step.
-                Returns True if it's likely a header, False otherwise.
-                """
-                text_strip = text.strip()
-                text_lower = text_strip.lower()
-                word_count = len(text_strip.split())
+            steps_written = 0
 
-                # Condition 1: Check for common, specific header phrases. This is a high-confidence check.
-                exact_header_phrases = [
-                    'primary packaging instruction', 'secondary packaging instruction',
-                    'packaging procedure', 'loading details', 'palletization', 'part information',
-                    'vendor information', 'problems if any', 'remarks'
-                ]
-                if text_lower in exact_header_phrases:
-                    return True
-
-                # Condition 2: A short line (<= 5 words) that contains a general header keyword.
-                # This catches titles like "Secondary Packaging" or "Label Instructions".
-                general_keywords = ['primary', 'secondary', 'label', 'instruction', 'packaging']
-                if any(keyword in text_lower for keyword in general_keywords) and word_count <= 5:
-                    return True
-                
-                # Condition 3: A line ending in a colon is almost always a title/header, not a step.
-                if text_strip.endswith(':'):
-                    return True
-
-                # If none of the above header conditions are met, it's treated as a valid step.
-                return False
-            # --- END OF HELPER FUNCTION ---
+            for i, step in enumerate(filled_steps):
+                step_row = start_row + i
+                step_text = step.strip()
             
-            for row_num in range(start_row, start_row + max_search_rows):
+                # Safety check
+                if step_row > worksheet.max_row + 20:
+                    st.warning(f"⚠️ Stopping at row {step_row} to avoid exceeding template boundaries")
+                    break
+            
                 try:
-                    row_has_content = False
-                    step_text = ""
-                    for col_num in target_cols:
+                    # Define the merge range for this row (B to P)
+                    merge_range = f"B{step_row}:R{step_row}"
+                    target_cell = worksheet.cell(row=step_row, column=target_col)
+                
+                    print(f"📝 Writing filled step {i + 1} to {merge_range}: {step_text[:50]}...")
+                    st.write(f"📝 Step {i + 1} -> {merge_range}: {step_text[:50]}...")
+
+                    # Unmerge any existing ranges that might conflict
+                    existing_merged_ranges = []
+                    for merged_range in list(worksheet.merged_cells.ranges):
+                        if (merged_range.min_row <= step_row <= merged_range.max_row and
+                            merged_range.min_col <= end_col and merged_range.max_col >= target_col):
+                            existing_merged_ranges.append(merged_range)
+
+                    for merged_range in existing_merged_ranges:
                         try:
-                            cell = worksheet.cell(row=row_num, column=col_num)
-                            if cell.value and str(cell.value).strip():
-                                cell_text = str(cell.value).strip()
-                                if cell_text and not cell_text.isspace():
-                                    step_text = cell_text
-                                    row_has_content = True
-                                    break
-                        except:
-                            continue
+                            worksheet.unmerge_cells(str(merged_range))
+                            print(f"🔧 Unmerged existing range: {merged_range}")
+                        except Exception as unmerge_error:
+                            print(f"⚠️ Warning: Could not unmerge {merged_range}: {unmerge_error}")
 
-                    if row_has_content and step_text:
-                        step_text = step_text.strip()
+                    # Clear any existing content in the range
+                    for col in range(target_col, end_col + 1):
+                        cell = worksheet.cell(row=step_row, column=col)
+                        cell.value = None
 
-                        # ==============================================================================
-                        # FINAL FIX: Use the new, robust helper function to filter out any headers.
-                        # ==============================================================================
-                        if is_likely_a_header(step_text):
-                            print(f"🚫 Skipping row {row_num} as it's identified as a header: '{step_text}'")
-                            continue  # Skip to the next row
-                        # ==============================================================================
+                    # Write the step text to the first cell (B)
+                    target_cell.value = step_text
+                    target_cell.font = Font(name='Calibri', size=10)
+                    target_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
 
-                        # Original logic to filter out junk and add valid steps
-                        skip_patterns = [r'^[0-9]+$', r'^[A-Z]$', r'^[-_=]+$']
-                        should_skip = any(re.match(pattern, step_text) for pattern in skip_patterns)
-                    
-                        if not should_skip and len(step_text) > 5:
-                            procedure_steps.append(step_text)
-                            print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
-                        
-                        empty_count = 0
-                    else:
-                        empty_count += 1
-                        if empty_count >= 3:
-                            break
-                except Exception as e:
-                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    # Merge the cells B to P for this row
+                    try:
+                        worksheet.merge_cells(merge_range)
+                        print(f"✅ Merged range: {merge_range}")
+                    except Exception as merge_error:
+                        print(f"⚠️ Warning: Could not merge {merge_range}: {merge_error}")
+                        st.warning(f"Could not merge {merge_range}: {merge_error}")
+  
+                    # Adjust row height based on text length
+                    chars_per_line = 120
+                    num_lines = max(1, len(step_text) // chars_per_line + 1)
+                    estimated_height = 15 + (num_lines - 1) * 15
+                    worksheet.row_dimensions[step_row].height = estimated_height
+
+                    steps_written += 1
+                
+                except Exception as step_error:
+                    print(f"❌ Error writing step {i + 1}: {step_error}")
+                    st.error(f"Error writing step {i + 1}: {step_error}")
                     continue
-            workbook.close()
-        
-            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
-            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
-        
-            for i, step in enumerate(procedure_steps, 1):
-                print(f"  Step {i}: {step[:100]}...")
-            return procedure_steps
-        except Exception as e:
-            print(f"❌ Error reading procedure steps from template: {e}")
-            st.error(f"Error reading procedure steps from template: {e}")
-            return []
 
+            print(f"\n✅ FILLED PROCEDURE STEPS COMPLETED")
+            print(f"   Total steps written: {steps_written}")
+        
+            st.success(f"✅ Successfully wrote {steps_written} filled procedure steps to template")
+
+            return steps_written
+
+        except Exception as e:
+            print(f"💥 Critical error in write_filled_steps_to_template: {e}")
+            st.error(f"Critical error writing filled procedure steps: {e}")
+            return 0
+
+# Packaging types and procedures from reference code
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
