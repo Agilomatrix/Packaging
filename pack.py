@@ -894,6 +894,8 @@ class EnhancedTemplateMapperWithImages:
                     'part information', 'part info', 'part', 'component', 'item', 'component information'
                 ],
                 'field_mappings': {
+                    'L': 'Part L',
+                    'l': 'Part L',
                     'length': 'Part L',
                     'part l': 'Part L',
                     'component l': 'Part L',
@@ -1281,38 +1283,31 @@ class EnhancedTemplateMapperWithImages:
     # *** NEW METHOD: Read procedure steps from Excel template ***
     def read_procedure_steps_from_template(self, template_path, packaging_type=None):
         """
-        Read procedure steps directly from the Excel template with intelligent header filtering.
+        Read procedure steps directly from the Excel template.
+        Args:
+            template_path: Path to the Excel templat
+            packaging_type: Optional packaging type to filter steps
+        Returns:
+            List of procedure steps with {placeholders}
         """
         try:
-            print("\n=== READING PROCEDURE STEPS FROM TEMPLATE (ENHANCED) ===")
+            print(f"\n=== READING PROCEDURE STEPS FROM TEMPLATE ===")
             st.write(f"📖 Reading procedure steps from template...")
         
             workbook = openpyxl.load_workbook(template_path)
             worksheet = workbook.active
         
             procedure_steps = []
-            start_row = 28
-            target_cols = list(range(2, 19))  # Columns B to R
-            max_search_rows = 50
-            empty_count = 0
-
-            # ==============================================================================
-            # START OF THE FIX: Add a list of keywords to identify and exclude headers
-            # ==============================================================================
-            header_exclusion_keywords = [
-                'packaging', 'instruction', 'procedure', 'primary', 'secondary', 
-                'label', 'barcode', 'vendor', 'supplier', 'part info', 
-                'general information', 'palletization', 'loading details'
-            ]
-            print(f"ℹ️ Will exclude lines containing keywords: {header_exclusion_keywords}")
-            # ==============================================================================
-            # END OF THE FIX
-            # ==============================================================================
+            start_row = 28  # Based on your original code
+            target_cols = list(range(2, 19))  # Columns B to P (2 to 16)
+            max_search_rows = 50  # Search up to 50 rows
+            empty_count = 0       # track consecutive empty rows
             
             for row_num in range(start_row, start_row + max_search_rows):
                 try:
                     row_has_content = False
                     step_text = ""
+                    # Look for content in columns B to P
                     for col_num in target_cols:
                         try:
                             cell = worksheet.cell(row=row_num, column=col_num)
@@ -1324,34 +1319,26 @@ class EnhancedTemplateMapperWithImages:
                                     break
                         except:
                             continue
-
                     if row_has_content and step_text:
+                        # Clean and validate the step text
                         step_text = step_text.strip()
-                        step_text_lower = step_text.lower() # For case-insensitive matching
-
-                        # ==============================================================================
-                        # START OF THE FIX: Check if the found text is a header and skip it
-                        # ==============================================================================
-                        # If the text contains any of the exclusion keywords, it's likely a header, not a step.
-                        if any(keyword in step_text_lower for keyword in header_exclusion_keywords):
-                            print(f"🚫 Skipping row {row_num} as it looks like a header: '{step_text}'")
-                            continue # Skip to the next row
-                        # ==============================================================================
-                        # END OF THE FIX
-                        # ==============================================================================
-
+                    
                         # Skip obviously non-procedure content
-                        skip_patterns = [r'^[0-9]+$', r'^[A-Z]$', r'^[-_=]+$']
+                        skip_patterns = [
+                            r'^[0-9]+$',  # Just numbers
+                            r'^[A-Z]$',   # Single letters
+                            r'^[-_=]+$',  # Just separators
+                        ]
+                    
                         should_skip = any(re.match(pattern, step_text) for pattern in skip_patterns)
                     
-                        if not should_skip and len(step_text) > 5:
+                        if not should_skip and len(step_text) > 5:  # Minimum length check
                             procedure_steps.append(step_text)
                             print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
-                        
-                        empty_count = 0
+                        empty_count = 0  # reset empty counter after a valid step
                     else:
                         empty_count += 1
-                        if empty_count >= 3:
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
                             break
                 except Exception as e:
                     print(f"⚠️ Error reading row {row_num}: {e}")
@@ -1361,6 +1348,7 @@ class EnhancedTemplateMapperWithImages:
             print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
             st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
         
+            # Debug: Show found steps
             for i, step in enumerate(procedure_steps, 1):
                 print(f"  Step {i}: {step[:100]}...")
             return procedure_steps
@@ -2011,7 +1999,7 @@ class EnhancedTemplateMapperWithImages:
             st.error(f"Error in map_data_with_section_context_for_row: {e}")
 
         return mapping_results
-
+    
     def write_filled_steps_to_template(self, worksheet, filled_steps):
         """Write filled procedure steps to merged cells B to P starting from Row 28"""
         try:
@@ -2023,41 +2011,10 @@ class EnhancedTemplateMapperWithImages:
 
             start_row = 28
             target_col = 2  # Column B
-            end_col = 18    # Column R
-
-            # ==============================================================================
-            # START OF THE FIX: Add this code block to clear old placeholders
-            # ==============================================================================
-            # Proactively clear a block of rows to remove any old placeholder data
-            # This prevents leftover steps from the original template appearing in the output.
-            max_procedure_rows_to_clear = 50 # A safe, large number of rows to clear
-            print(f"🧹 Clearing placeholder area from row {start_row} to {start_row + max_procedure_rows_to_clear - 1}")
-            for row_num in range(start_row, start_row + max_procedure_rows_to_clear):
-                try:
-                    # Check if the row has a merged cell range (B:R) and unmerge it first
-                    merge_range_to_check = f"B{row_num}:R{row_num}"
-                    if merge_range_to_check in worksheet.merged_cells:
-                        worksheet.unmerge_cells(merge_range_to_check)
-                        print(f"🔧 Unmerged pre-existing range: {merge_range_to_check}")
-
-                    # Clear the content of all cells in the target columns for this row
-                    for col_num in range(target_col, end_col + 1):
-                        cell = worksheet.cell(row=row_num, column=col_num)
-                        if cell:
-                            cell.value = None
-                            
-                    # Optional: Reset row height to a default value
-                    if row_num in worksheet.row_dimensions:
-                        worksheet.row_dimensions[row_num].height = 15 # Default height
-
-                except Exception as clear_error:
-                    # This might fail on rows without any formatting, which is fine.
-                    print(f"⚠️ Warning during proactive clearing of row {row_num}: {clear_error}")
-                    continue
+            end_col = 18    # Column P
 
             steps_written = 0
 
-            # This existing loop will now write onto a clean area
             for i, step in enumerate(filled_steps):
                 step_row = start_row + i
                 step_text = step.strip()
@@ -2068,15 +2025,14 @@ class EnhancedTemplateMapperWithImages:
                     break
             
                 try:
-                    # Define the merge range for this row (B to R)
+                    # Define the merge range for this row (B to P)
                     merge_range = f"B{step_row}:R{step_row}"
                     target_cell = worksheet.cell(row=step_row, column=target_col)
                 
                     print(f"📝 Writing filled step {i + 1} to {merge_range}: {step_text[:50]}...")
                     st.write(f"📝 Step {i + 1} -> {merge_range}: {step_text[:50]}...")
 
-                    # This part of the original code is redundant because of the clearing block above,
-                    # but it is harmless to leave it. It ensures each specific row is unmerged before writing.
+                    # Unmerge any existing ranges that might conflict
                     existing_merged_ranges = []
                     for merged_range in list(worksheet.merged_cells.ranges):
                         if (merged_range.min_row <= step_row <= merged_range.max_row and
@@ -2100,7 +2056,7 @@ class EnhancedTemplateMapperWithImages:
                     target_cell.font = Font(name='Calibri', size=10)
                     target_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
 
-                    # Merge the cells B to R for this row
+                    # Merge the cells B to P for this row
                     try:
                         worksheet.merge_cells(merge_range)
                         print(f"✅ Merged range: {merge_range}")
