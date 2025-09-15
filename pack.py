@@ -1299,7 +1299,7 @@ class EnhancedTemplateMapperWithImages:
     
             procedure_steps = []
             start_row = 28  # Based on your original code
-            target_cols = list(range(2, 19))  # Columns B to P (2 to 16)
+            target_cols = list(range(2, 19))  # Columns B to P (2 to 18)
             max_search_rows = 50  # Search up to 50 rows
             empty_count = 0       # track consecutive empty rows
         
@@ -1319,21 +1319,15 @@ class EnhancedTemplateMapperWithImages:
                                     break
                         except:
                             continue
+                        
                     if row_has_content and step_text:
                         # Clean and validate the step text
                         step_text = step_text.strip()
                 
                         # Enhanced filtering to avoid non-procedure content
                         skip_patterns = [
-                            r'^[0-9]+$',  # Just numbers
-                            r'^[A-Z]$',   # Single letters
-                            r'^[-_=]+$',  # Just separators
-                            r'^[A-Z\s]*PROCEDURE[A-Z\s]*$',  # Headers like "PROCEDURE STEPS"
-                            r'^[A-Z\s]*STEPS[A-Z\s]*$',     # Headers like "STEPS"
-                            r'^[A-Z\s]*INSTRUCTIONS[A-Z\s]*$', # Headers like "INSTRUCTIONS"
-                            r'^\s*$',     # Empty or whitespace only
-                            r'^[^a-zA-Z]*$',  # No alphabetic characters
-                        ]
+                            r'^[0-9]+
+                
                         should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
                 
                         # Additional checks for valid procedure steps
@@ -1342,7 +1336,6 @@ class EnhancedTemplateMapperWithImages:
                             len(step_text) > 10 and  # Increased minimum length
                             any(c.isalpha() for c in step_text) and  # Must contain letters
                             not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
-
                         )
                 
                         if is_valid_step:
@@ -1364,6 +1357,430 @@ class EnhancedTemplateMapperWithImages:
                 except Exception as e:
                     print(f"⚠️ Error reading row {row_num}: {e}")
                     continue
+                
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],                              # Just numbers
+                            r'^[A-Z]
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                        print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                 
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],                               # Single letters
+                            r'^[-_=]+
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                            print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],                              # Just separators
+                            r'^[A-Z\s]*PROCEDURE[A-Z\s]*
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                            print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],          # Headers like "PROCEDURE STEPS"
+                            r'^[A-Z\s]*STEPS[A-Z\s]*
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                            print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],              # Headers like "STEPS"
+                            r'^[A-Z\s]*INSTRUCTIONS[A-Z\s]*
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                            print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],       # Headers like "INSTRUCTIONS"
+                            r'^[A-Z\s]*PACKAGING[A-Z\s]*
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                            print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],          # Headers like "PACKAGING"
+                            r'^\s*
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                            print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],                                 # Empty or whitespace only
+                            r'^[^a-zA-Z]*
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                            print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                
+            workbook.close()
+    
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+    
+            # Debug: Show found steps with row numbers for easier identification
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+            
+            return procedure_steps
+        
+        except Exception as e:
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return [],                          # No alphabetic characters
+                        ]
+                
+                        should_skip = any(re.match(pattern, step_text, re.IGNORECASE) for pattern in skip_patterns)
+                
+                        # Additional checks for valid procedure steps
+                        is_valid_step = (
+                            not should_skip and 
+                            len(step_text) > 10 and  # Increased minimum length
+                            any(c.isalpha() for c in step_text) and  # Must contain letters
+                            not step_text.isupper() or len(step_text.split()) > 3  # Avoid short ALL CAPS headers
+                        )
+                
+                        if is_valid_step:
+                            # Check for duplicates (in case of merged cell issues)
+                            if step_text not in procedure_steps:
+                                procedure_steps.append(step_text)
+                                print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                            else:
+                                print(f"🔄 Skipping duplicate: {step_text[:50]}...")
+                            empty_count = 0  # reset empty counter after a valid step
+                        else:
+                            print(f"⏭️  Skipping invalid content at row {row_num}: {step_text[:50]}...")
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:  # stop after 3 consecutive empty rows
+                            print(f"🛑 Stopping search after {empty_count} empty rows at row {row_num}")
+                            break
+                        
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+                
             workbook.close()
     
             print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
@@ -1379,7 +1796,7 @@ class EnhancedTemplateMapperWithImages:
             print(f"❌ Error reading procedure steps from template: {e}")
             st.error(f"Error reading procedure steps from template: {e}")
             return []
-
+        
     def substitute_placeholders_in_steps(self, procedure_steps, data_dict):
         """
         Replace placeholders in procedure steps with actual data values.
