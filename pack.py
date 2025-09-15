@@ -1371,7 +1371,7 @@ class EnhancedTemplateMapperWithImages:
     
             # Debug: Show found steps with row numbers for easier identification
             for i, step in enumerate(procedure_steps, 1):
-            print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
+                print(f"  Step {i} (Row {start_row + i - 1}): {step[:100]}...")
             
             return procedure_steps
         
