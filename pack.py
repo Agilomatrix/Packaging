@@ -2000,96 +2000,112 @@ class EnhancedTemplateMapperWithImages:
 
         return mapping_results
     
-    def write_filled_steps_to_template(self, worksheet, filled_steps):
-        """Write filled procedure steps to merged cells B to P starting from Row 28"""
+    def read_procedure_steps_from_template(self, template_path, packaging_type=None):
+        """
+        Read procedure steps directly from the Excel template with robust, multi-check header detection.
+        """
         try:
-            from openpyxl.cell import MergedCell
-            from openpyxl.styles import Font, Alignment
-
-            print(f"\n=== WRITING FILLED PROCEDURE STEPS ===")
-            st.write(f"🔄 Writing {len(filled_steps)} filled procedure steps to template")
-
-            start_row = 28
-            target_col = 2  # Column B
-            end_col = 18    # Column P
-
-            steps_written = 0
-
-            for i, step in enumerate(filled_steps):
-                step_row = start_row + i
-                step_text = step.strip()
-            
-                # Safety check
-                if step_row > worksheet.max_row + 20:
-                    st.warning(f"⚠️ Stopping at row {step_row} to avoid exceeding template boundaries")
-                    break
-            
-                try:
-                    # Define the merge range for this row (B to P)
-                    merge_range = f"B{step_row}:R{step_row}"
-                    target_cell = worksheet.cell(row=step_row, column=target_col)
-                
-                    print(f"📝 Writing filled step {i + 1} to {merge_range}: {step_text[:50]}...")
-                    st.write(f"📝 Step {i + 1} -> {merge_range}: {step_text[:50]}...")
-
-                    # Unmerge any existing ranges that might conflict
-                    existing_merged_ranges = []
-                    for merged_range in list(worksheet.merged_cells.ranges):
-                        if (merged_range.min_row <= step_row <= merged_range.max_row and
-                            merged_range.min_col <= end_col and merged_range.max_col >= target_col):
-                            existing_merged_ranges.append(merged_range)
-
-                    for merged_range in existing_merged_ranges:
-                        try:
-                            worksheet.unmerge_cells(str(merged_range))
-                            print(f"🔧 Unmerged existing range: {merged_range}")
-                        except Exception as unmerge_error:
-                            print(f"⚠️ Warning: Could not unmerge {merged_range}: {unmerge_error}")
-
-                    # Clear any existing content in the range
-                    for col in range(target_col, end_col + 1):
-                        cell = worksheet.cell(row=step_row, column=col)
-                        cell.value = None
-
-                    # Write the step text to the first cell (B)
-                    target_cell.value = step_text
-                    target_cell.font = Font(name='Calibri', size=10)
-                    target_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
-
-                    # Merge the cells B to P for this row
-                    try:
-                        worksheet.merge_cells(merge_range)
-                        print(f"✅ Merged range: {merge_range}")
-                    except Exception as merge_error:
-                        print(f"⚠️ Warning: Could not merge {merge_range}: {merge_error}")
-                        st.warning(f"Could not merge {merge_range}: {merge_error}")
-  
-                    # Adjust row height based on text length
-                    chars_per_line = 120
-                    num_lines = max(1, len(step_text) // chars_per_line + 1)
-                    estimated_height = 15 + (num_lines - 1) * 15
-                    worksheet.row_dimensions[step_row].height = estimated_height
-
-                    steps_written += 1
-                
-                except Exception as step_error:
-                    print(f"❌ Error writing step {i + 1}: {step_error}")
-                    st.error(f"Error writing step {i + 1}: {step_error}")
-                    continue
-
-            print(f"\n✅ FILLED PROCEDURE STEPS COMPLETED")
-            print(f"   Total steps written: {steps_written}")
+            print("\n=== READING PROCEDURE STEPS FROM TEMPLATE (ROBUST VERSION) ===")
+            st.write(f"📖 Reading procedure steps from template...")
         
-            st.success(f"✅ Successfully wrote {steps_written} filled procedure steps to template")
+            workbook = openpyxl.load_workbook(template_path)
+            worksheet = workbook.active
+        
+            procedure_steps = []
+            start_row = 28
+            target_cols = list(range(2, 19))  # Columns B to R
+            max_search_rows = 50
+            empty_count = 0
 
-            return steps_written
+            # --- HELPER FUNCTION FOR ROBUST HEADER DETECTION ---
+            def is_likely_a_header(text):
+                """
+                Determines if a line of text is a header rather than a procedural step.
+                Returns True if it's likely a header, False otherwise.
+                """
+                text_strip = text.strip()
+                text_lower = text_strip.lower()
+                word_count = len(text_strip.split())
 
+                # Condition 1: Check for common, specific header phrases. This is a high-confidence check.
+                exact_header_phrases = [
+                    'primary packaging instruction', 'secondary packaging instruction',
+                    'packaging procedure', 'loading details', 'palletization', 'part information',
+                    'vendor information', 'problems if any', 'remarks'
+                ]
+                if text_lower in exact_header_phrases:
+                    return True
+
+                # Condition 2: A short line (<= 5 words) that contains a general header keyword.
+                # This catches titles like "Secondary Packaging" or "Label Instructions".
+                general_keywords = ['primary', 'secondary', 'label', 'instruction', 'packaging']
+                if any(keyword in text_lower for keyword in general_keywords) and word_count <= 5:
+                    return True
+                
+                # Condition 3: A line ending in a colon is almost always a title/header, not a step.
+                if text_strip.endswith(':'):
+                    return True
+
+                # If none of the above header conditions are met, it's treated as a valid step.
+                return False
+            # --- END OF HELPER FUNCTION ---
+            
+            for row_num in range(start_row, start_row + max_search_rows):
+                try:
+                    row_has_content = False
+                    step_text = ""
+                    for col_num in target_cols:
+                        try:
+                            cell = worksheet.cell(row=row_num, column=col_num)
+                            if cell.value and str(cell.value).strip():
+                                cell_text = str(cell.value).strip()
+                                if cell_text and not cell_text.isspace():
+                                    step_text = cell_text
+                                    row_has_content = True
+                                    break
+                        except:
+                            continue
+
+                    if row_has_content and step_text:
+                        step_text = step_text.strip()
+
+                        # ==============================================================================
+                        # FINAL FIX: Use the new, robust helper function to filter out any headers.
+                        # ==============================================================================
+                        if is_likely_a_header(step_text):
+                            print(f"🚫 Skipping row {row_num} as it's identified as a header: '{step_text}'")
+                            continue  # Skip to the next row
+                        # ==============================================================================
+
+                        # Original logic to filter out junk and add valid steps
+                        skip_patterns = [r'^[0-9]+$', r'^[A-Z]$', r'^[-_=]+$']
+                        should_skip = any(re.match(pattern, step_text) for pattern in skip_patterns)
+                    
+                        if not should_skip and len(step_text) > 5:
+                            procedure_steps.append(step_text)
+                            print(f"📝 Found step {len(procedure_steps)}: {step_text[:50]}...")
+                        
+                        empty_count = 0
+                    else:
+                        empty_count += 1
+                        if empty_count >= 3:
+                            break
+                except Exception as e:
+                    print(f"⚠️ Error reading row {row_num}: {e}")
+                    continue
+            workbook.close()
+        
+            print(f"✅ Successfully read {len(procedure_steps)} procedure steps from template")
+            st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
+        
+            for i, step in enumerate(procedure_steps, 1):
+                print(f"  Step {i}: {step[:100]}...")
+            return procedure_steps
         except Exception as e:
-            print(f"💥 Critical error in write_filled_steps_to_template: {e}")
-            st.error(f"Critical error writing filled procedure steps: {e}")
-            return 0
+            print(f"❌ Error reading procedure steps from template: {e}")
+            st.error(f"Error reading procedure steps from template: {e}")
+            return []
 
-# Packaging types and procedures from reference code
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
