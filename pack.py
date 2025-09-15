@@ -2047,7 +2047,7 @@ class EnhancedTemplateMapperWithImages:
                             print(f"⚠️ Warning: Could not unmerge {merged_range}: {unmerge_error}")
 
                     # Clear any existing content in the range
-                    for col in range(target_col, end_col + 1):
+                    for col in range(target_col, end_col):
                         cell = worksheet.cell(row=step_row, column=col)
                         cell.value = None
 
