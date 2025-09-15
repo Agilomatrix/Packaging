@@ -1751,6 +1751,11 @@ class EnhancedTemplateMapperWithImages:
             
         return str_value
 
+    # ADD THIS LINE AT THE VERY TOP OF YOUR PYTHON SCRIPT
+    from copy import copy
+
+    # THEN, REPLACE YOUR EXISTING map_template_with_data FUNCTION WITH THIS ONE
+
     def map_template_with_data(self, template_path, data_path):
         """Enhanced mapping with section-based approach and multiple row processing"""
         try:
@@ -1758,14 +1763,15 @@ class EnhancedTemplateMapperWithImages:
             data_df = pd.read_excel(data_path)
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
-            
+        
+            # --- UPDATED: Added 'yellow' for complete color mapping ---
             COLOR_MAP = {
-                'green': PatternFill(start_color='FFC6EFCE', end_color='FFC6EFCE', fill_type='solid'),
-                'red':   PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid'),
-                'blue':  PatternFill(start_color='FFD9E1F2', end_color='FFD9E1F2', fill_type='solid')
+                'green':  PatternFill(start_color='FFC6EFCE', end_color='FFC6EFCE', fill_type='solid'), # Light Green
+                'red':    PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid'), # Light Red
+                'yellow': PatternFill(start_color='FFFFFF99', end_color='FFFFFF99', fill_type='solid')  # Light Yellow
             }
-            
-            # Force direct capture of critical procedure columns if present in Excel
+        
+            # This part of your code remains unchanged
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm"],
                 "Outer W": ["outer w", "outer width", "outer w-mm"],
@@ -1778,113 +1784,105 @@ class EnhancedTemplateMapperWithImages:
                 "Level":   ["level", "levels"],
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
             }
-            
             col_map = {}
             for canonical, variants in critical_cols.items():
                 for col in data_df.columns:
                     col_norm = self.preprocess_text(col)
                     if any(col_norm == self.preprocess_text(v) for v in variants):
                         col_map[col_norm] = canonical
-                        print(f"DEBUG: Matched column '{col}' ({col_norm}) -> '{canonical}'")
                         break
-            
-            # *** NEW: Read procedure steps from template ONCE ***
+        
             template_procedure_steps = self.read_procedure_steps_from_template(template_path)
             if not template_procedure_steps:
                 st.warning("⚠️ No procedure steps found in template. Will use empty steps.")
-            
-            # Store all row data for multi-template generation
+        
             st.session_state.all_row_data = []
-    
-            # Process each row
+
             for row_idx in range(len(data_df)):
                 st.write(f"🔄 Processing row {row_idx + 1}/{len(data_df)}")
-                
-                # Load fresh template for each row
+            
                 workbook = openpyxl.load_workbook(template_path)
                 worksheet = workbook.active
-        
-                # Find template fields with section context
+    
                 template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
-        
-                # Map data with section context for current row
                 mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
-        
-                # Apply mappings to template
+    
                 mapping_count = 0
-                data_dict = {}  # Store mapped data for procedure generation
-                filename_parts = {}  # Store parts for filename
-        
+                data_dict = {}
+                filename_parts = {}
+    
+                # ==============================================================================
+                # START OF THE UPDATE: The logic inside this loop is now enhanced for all colors.
+                # ==============================================================================
                 for coord, mapping in mapping_results.items():
-                    if mapping['is_mappable'] and mapping['data_column']:
+                    if mapping['is_mappable']:
                         try:
-                            data_col = mapping['data_column']
-                            raw_value = data_df[data_col].iloc[row_idx]  # Use current row
-                            data_value = self.clean_data_value(raw_value)
-                    
-                            # Store in data_dict for procedure generation
-                            data_dict[mapping['template_field']] = data_value
+                            target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
+                            if not target_cell_coord:
+                                continue
 
-                            # Force map critical fields if the column matches
+                            target_cell = worksheet[target_cell_coord]
+                            # Create a copy of the cell's existing style to preserve borders, fonts, etc.
+                            new_style = copy(target_cell.style)
+                        
+                            # CASE 1: MAPPING FAILED (No matching data column found) -> RED
+                            if not mapping['data_column']:
+                                new_style.fill = COLOR_MAP['red']
+                                target_cell.style = new_style
+                                continue
+
+                            # CASE 2: MAPPING SUCCEEDED (A data column was found)
+                            data_col = mapping['data_column']
+                            raw_value = data_df[data_col].iloc[row_idx]
+                            data_value = self.clean_data_value(raw_value)
+                        
+                            # Your original logic for data and filenames is preserved
+                            data_dict[mapping['template_field']] = data_value
                             normalized_col = self.preprocess_text(data_col)
                             if normalized_col in col_map:
                                 data_dict[col_map[normalized_col]] = data_value
-                    
-                            # Store filename components
-                             # Store filename components by checking the mapped DATA COLUMN name, which is more reliable.
                             data_col_name = mapping.get('data_column', '').lower()
                             if data_col_name:
-                                # Part Number Check (check if not already found)
-                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number', 'part_number', 'part #']):
+                                if 'part_no' not in filename_parts and 'part no' in data_col_name:
                                     filename_parts['part_no'] = data_value
-                                
-                                # Description Check (check if not already found)
-                                if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc', 'part desc']):
+                                if 'description' not in filename_parts and 'description' in data_col_name:
                                     filename_parts['description'] = data_value
-
-                                # Vendor Code Check (check if not already found)
-                                if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code', 'supplier code']):
+                                if 'vendor_code' not in filename_parts and 'vendor code' in data_col_name:
                                     filename_parts['vendor_code'] = data_value
-                            # --- END: ROBUST FILENAME COMPONENT LOGIC ---
-                    
-                            # Find target cell and write data
-                            target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
-                    
-                            if target_cell_coord and data_value:
-                                target_cell = worksheet[target_cell_coord]
+                        
+                            # Sub-Case 2a: DATA IS PRESENT -> GREEN
+                            if data_value:
                                 target_cell.value = data_value
+                                new_style.fill = COLOR_MAP['green']
                                 mapping_count += 1
+                            # Sub-Case 2b: DATA IS MISSING/EMPTY -> YELLOW
+                            else:
+                                new_style.fill = COLOR_MAP['yellow']
+                        
+                            # Apply the fully modified style back to the cell
+                            target_cell.style = new_style
+
                         except Exception as e:
-                            st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
-                
-                # *** NEW: Process procedure steps from template instead of hardcoded ***
+                            st.write(f"⚠️ Error processing field '{mapping['template_field']}': {e}")
+                # ==============================================================================
+                # END OF THE UPDATE
+                # ==============================================================================
+
                 steps_written = 0
                 if template_procedure_steps:
-                    # Substitute placeholders with actual data
                     filled_steps = self.substitute_placeholders_in_steps(template_procedure_steps, data_dict)
-                    
-                    # Write the filled steps back to template
                     steps_written = self.write_filled_steps_to_template(worksheet, filled_steps)
                 else:
                     st.write("⚠️ No procedure steps to process for this row")
-                
-                # Generate filename
-                vendor_code = filename_parts.get('vendor_code', 'NoVendor')
-                part_no = filename_parts.get('part_no', 'NoPart')
-                description = filename_parts.get('description', 'NoDesc')
-        
-                # Clean filename parts
-                vendor_code = re.sub(r'[^\w\-_]', '', str(vendor_code))[:10]
-                part_no = re.sub(r'[^\w\-_]', '', str(part_no))[:15]
-                description = re.sub(r'[^\w\-_]', '', str(description))[:20]
-        
+            
+                vendor_code = re.sub(r'[^\w\-_]', '', str(filename_parts.get('vendor_code', 'NoVendor')))[:10]
+                part_no = re.sub(r'[^\w\-_]', '', str(filename_parts.get('part_no', 'NoPart')))[:15]
+                description = re.sub(r'[^\w\-_]', '', str(filename_parts.get('description', 'NoDesc')))[:20]
                 filename = f"{vendor_code}_{part_no}_{description}.xlsx"
-        
-                # Save workbook to temporary file
+    
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
                     workbook.save(tmp_file.name)
-            
-                    # Store row data
+        
                     row_data = {
                         'row_index': row_idx,
                         'filename': filename,
@@ -1898,13 +1896,13 @@ class EnhancedTemplateMapperWithImages:
                         'procedure_steps': filled_steps if template_procedure_steps else []
                     }
                     st.session_state.all_row_data.append(row_data)
-                
+            
                 workbook.close()
                 st.write(f"✅ Row {row_idx + 1} processed: {mapping_count} fields mapped, {steps_written} steps written -> {filename}")
-            
+        
             st.success(f"🎉 Successfully processed {len(data_df)} rows!")
             return True, st.session_state.all_row_data
-            
+        
         except Exception as e:
             st.error(f"❌ Error mapping template: {e}")
             st.write("📋 Traceback:", traceback.format_exc())
