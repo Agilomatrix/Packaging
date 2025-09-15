@@ -2802,18 +2802,6 @@ def main():
     elif st.session_state.current_step == 6:
         st.header("🎨 Step 6: Generate Final Documents with Smart Placement")
     
-        # Generation summary
-        total_templates = len(st.session_state.all_row_data) if hasattr(st.session_state, 'all_row_data') else 0
-        total_images = 0
-    
-        if st.session_state.image_option == 'extract':
-            if hasattr(st.session_state, 'matched_part_images'):
-                total_images = sum(result['count'] for result in st.session_state.matched_part_images.values())
-            else:
-                total_images = len(st.session_state.extracted_excel_images)
-        elif st.session_state.image_option == 'upload':
-            total_images = len(st.session_state.uploaded_images)
-    
         # Summary metrics
         col1, col2, col3 = st.columns(3)
         with col1:
