@@ -1222,7 +1222,7 @@ class EnhancedTemplateMapperWithImages:
     def find_data_cell_for_label(self, worksheet, field_info):
         """
         Find data cell for a label, with special handling for the 'Problems' field
-        and safer, constrained search for all other fields.
+        and conditional coloring for V25-V26 range only when Problems field has content.
         """
         try:
             row = field_info['row']
@@ -1238,7 +1238,6 @@ class EnhancedTemplateMapperWithImages:
                 return target_cell_coord
 
             # --- STANDARD PLACEMENT LOGIC FOR ALL OTHER FIELDS ---
-
             # Define columns to be explicitly ignored for general placement.
             # The special case above runs first, so this won't block the 'Problems' field.
             IGNORED_COLUMNS = [22, 23, 24, 25] # V, W, X, Y
@@ -1265,7 +1264,7 @@ class EnhancedTemplateMapperWithImages:
             for offset in range(1, 6):
                 if is_suitable_data_cell(row, col + offset):
                     return worksheet.cell(row=row, column=col + offset).coordinate
-            
+        
             # Strategy 2: Look IMMEDIATELY BELOW the label (1 cell)
             if is_suitable_data_cell(row + 1, col):
                 return worksheet.cell(row=row + 1, column=col).coordinate
@@ -1273,11 +1272,88 @@ class EnhancedTemplateMapperWithImages:
             # If no suitable cell is found, give up to prevent errors.
             st.write(f"WARNING: Could not find a safe data cell for label '{field_info['value']}'. Skipping placement.")
             return None
-            
+        
         except Exception as e:
             st.error(f"Error in find_data_cell_for_label for '{field_info.get('value', 'N/A')}': {e}")
             return None
-
+    def apply_problems_conditional_coloring(self, worksheet, data_value, problems_field_info):
+        """
+        Apply conditional coloring to V25-V26 (and extending to AH) ONLY when Problems field has content.
+        Colors are applied based on the content of the problems field.
+        Args:
+            worksheet: The openpyxl worksheet object
+            data_value: The actual problems data content
+            problems_field_info: Field info for the problems field
+        """
+        try:
+            from openpyxl.styles import PatternFill
+        
+            # Only apply coloring if there's actual problems content
+            clean_value = self.clean_data_value(data_value)
+            if not clean_value or clean_value.strip() == "":
+                st.write("INFO: No problems content found. Skipping conditional coloring.")
+                return
+        
+            st.write(f"INFO: Applying conditional coloring for problems content: '{clean_value[:50]}...'")
+        
+            # Define color fills
+            COLOR_FILLS = {
+                'red': PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid'),
+                'green': PatternFill(start_color='FFC6EFCE', end_color='FFC6EFCE', fill_type='solid'),
+                'yellow': PatternFill(start_color='FFFFFF00', end_color='FFFFFF00', fill_type='solid')
+            }
+        
+            # Determine color based on problems content
+            problems_text = clean_value.lower()
+            selected_color = None
+        
+            # Color logic - customize these conditions based on your requirements
+            if any(word in problems_text for word in ['critical', 'urgent', 'severe', 'major', 'error', 'failure']):
+                selected_color = 'red'
+                st.write("INFO: Critical problems detected - applying RED coloring")
+            elif any(word in problems_text for word in ['warning', 'caution', 'attention', 'minor', 'check']):
+                selected_color = 'yellow' 
+                st.write("INFO: Warning problems detected - applying YELLOW coloring")
+            elif any(word in problems_text for word in ['resolved', 'fixed', 'ok', 'good', 'none', 'no issues']):
+                selected_color = 'green'
+                st.write("INFO: Resolved/Good status detected - applying GREEN coloring")
+            else:
+                # Default color for any other problems content
+                selected_color = 'yellow'
+                st.write("INFO: General problems content detected - applying default YELLOW coloring")
+        
+            if not selected_color:
+                st.write("INFO: No color condition met. Skipping coloring.")
+                return
+            
+            # Apply coloring to V25 and V26 (columns 22 and 23 in 0-indexed, but openpyxl uses 1-indexed)
+            # V = column 22, extending to AH = column 34
+            target_rows = [25, 26]  # V25 and V26
+            start_col = 22  # Column V (22nd column)
+            end_col = 34    # Column AH (34th column)
+        
+            fill = COLOR_FILLS[selected_color]
+        
+            for target_row in target_rows:
+                for col_num in range(start_col, end_col + 1):
+                    try:
+                        cell = worksheet.cell(row=target_row, column=col_num)
+                        cell.fill = fill
+                    
+                        # Log first and last cells for verification
+                        if col_num == start_col or col_num == end_col:
+                            cell_coord = cell.coordinate
+                            st.write(f"INFO: Applied {selected_color.upper()} color to cell {cell_coord}")
+                        
+                    except Exception as e:
+                        st.write(f"WARNING: Could not apply color to row {target_row}, col {col_num}: {e}")
+                        continue
+        
+            st.write(f"✅ Successfully applied {selected_color.upper()} coloring to V25:AH26 range")
+        
+        except Exception as e:
+            st.error(f"Error applying problems conditional coloring: {e}")
+        
     # *** NEW METHOD: Read procedure steps from Excel template ***
     def read_procedure_steps_from_template(self, template_path, packaging_type=None):
         """
@@ -1799,91 +1875,90 @@ class EnhancedTemplateMapperWithImages:
             # Process each row
             for row_idx in range(len(data_df)):
                 st.write(f"🔄 Processing row {row_idx + 1}/{len(data_df)}")
-                
+            
                 # Load fresh template for each row
                 workbook = openpyxl.load_workbook(template_path)
                 worksheet = workbook.active
-        
+    
                 # Find template fields with section context
                 template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
-        
+    
                 # Map data with section context for current row
                 mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
-        
+    
                 # Apply mappings to template
                 mapping_count = 0
-                data_dict = {}  # Store mapped data for procedure generation
-                filename_parts = {}  # Store parts for filename
-        
+                data_dict = {}
+                filename_parts = {}
+                problems_data = None  # Track problems field data
+                problems_field_info = None  # Track problems field info
+    
                 for coord, mapping in mapping_results.items():
                     if mapping['is_mappable'] and mapping['data_column']:
                         try:
                             data_col = mapping['data_column']
-                            raw_value = data_df[data_col].iloc[row_idx]  # Use current row
+                            raw_value = data_df[data_col].iloc[row_idx]
                             data_value = self.clean_data_value(raw_value)
-                    
+                
                             # Store in data_dict for procedure generation
                             data_dict[mapping['template_field']] = data_value
-
-                            # Force map critical fields if the column matches
-                            normalized_col = self.preprocess_text(data_col)
-                            if normalized_col in col_map:
-                                data_dict[col_map[normalized_col]] = data_value
-                    
+                        
+                            # Check if this is the problems field
+                            field_text_lower = self.preprocess_text(mapping['template_field'])
+                            if 'problems' in field_text_lower:
+                                problems_data = data_value
+                                problems_field_info = mapping['field_info']
+                                st.write(f"INFO: Detected problems field with data: '{data_value[:50]}...'")
+                
                             # Store filename components
-                             # Store filename components by checking the mapped DATA COLUMN name, which is more reliable.
                             data_col_name = mapping.get('data_column', '').lower()
                             if data_col_name:
-                                # Part Number Check (check if not already found)
-                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number', 'part_number', 'part #']):
+                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number']):
                                     filename_parts['part_no'] = data_value
-                                
-                                # Description Check (check if not already found)
-                                if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc', 'part desc']):
+                                if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc']):
                                     filename_parts['description'] = data_value
-
-                                # Vendor Code Check (check if not already found)
-                                if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code', 'supplier code']):
+                                if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code']):
                                     filename_parts['vendor_code'] = data_value
-                            # --- END: ROBUST FILENAME COMPONENT LOGIC ---
-                    
+                
                             # Find target cell and write data
                             target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
-                    
+                
                             if target_cell_coord and data_value:
                                 target_cell = worksheet[target_cell_coord]
                                 target_cell.value = data_value
                                 mapping_count += 1
+                            
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
-                
-                # *** NEW: Process procedure steps from template instead of hardcoded ***
+            
+                # Apply conditional coloring ONLY if problems field has content
+                if problems_data and problems_field_info:
+                    self.apply_problems_conditional_coloring(worksheet, problems_data, problems_field_info)
+                else:
+                    st.write("INFO: No problems content found or problems field not mapped. Skipping conditional coloring.")
+            
+                # Continue with procedure steps processing...
+                template_procedure_steps = self.read_procedure_steps_from_template(template_path)
                 steps_written = 0
                 if template_procedure_steps:
-                    # Substitute placeholders with actual data
                     filled_steps = self.substitute_placeholders_in_steps(template_procedure_steps, data_dict)
-                    
-                    # Write the filled steps back to template
                     steps_written = self.write_filled_steps_to_template(worksheet, filled_steps)
-                else:
-                    st.write("⚠️ No procedure steps to process for this row")
-                
-                # Generate filename
+            
+                # Generate filename and save
                 vendor_code = filename_parts.get('vendor_code', 'NoVendor')
-                part_no = filename_parts.get('part_no', 'NoPart')
+                part_no = filename_parts.get('part_no', 'NoPart') 
                 description = filename_parts.get('description', 'NoDesc')
-        
-                # Clean filename parts
+            
                 vendor_code = re.sub(r'[^\w\-_]', '', str(vendor_code))[:10]
                 part_no = re.sub(r'[^\w\-_]', '', str(part_no))[:15]
                 description = re.sub(r'[^\w\-_]', '', str(description))[:20]
-        
+            
                 filename = f"{vendor_code}_{part_no}_{description}.xlsx"
-        
-                # Save workbook to temporary file
+            
+                # Save workbook
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
                     workbook.save(tmp_file.name)
-            
+                
                     # Store row data
                     row_data = {
                         'row_index': row_idx,
@@ -1892,22 +1967,23 @@ class EnhancedTemplateMapperWithImages:
                         'data_dict': data_dict,
                         'mapping_count': mapping_count,
                         'steps_written': steps_written,
-                        'vendor_code': vendor_code,
-                        'part_no': part_no,
-                        'description': description,
-                        'procedure_steps': filled_steps if template_procedure_steps else []
+                        'has_problems_coloring': bool(problems_data),
+                        'problems_content': problems_data if problems_data else 'None'
                     }
-                    st.session_state.all_row_data.append(row_data)
                 
-                workbook.close()
-                st.write(f"✅ Row {row_idx + 1} processed: {mapping_count} fields mapped, {steps_written} steps written -> {filename}")
+                    if not hasattr(st.session_state, 'all_row_data'):
+                        st.session_state.all_row_data = []
+                    st.session_state.all_row_data.append(row_data)
             
+                workbook.close()
+                coloring_status = "with conditional coloring" if problems_data else "without coloring"
+                st.write(f"✅ Row {row_idx + 1} processed: {mapping_count} fields mapped, {steps_written} steps written {coloring_status} -> {filename}")
+        
             st.success(f"🎉 Successfully processed {len(data_df)} rows!")
             return True, st.session_state.all_row_data
-            
+        
         except Exception as e:
             st.error(f"❌ Error mapping template: {e}")
-            st.write("📋 Traceback:", traceback.format_exc())
             return False, []
             
     def map_data_with_section_context_for_row(self, template_fields, data_df, row_idx):
