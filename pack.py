@@ -2994,36 +2994,39 @@ def main():
                             # Create ZIP with organized structure
                             zip_buffer = io.BytesIO()
                             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                                
-                                # --- START: CORRECTED FOLDER LOGIC ---
+                                # Track filenames to ensure uniqueness
+                                filename_counter = {}
+        
                                 # Loop through each generated file directly
-                                for file_info in generated_files:
+                                for idx, file_info in enumerate(generated_files):
                                     # Get the already-processed values from the row_info dictionary
                                     vendor_code = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
                                     part_no = file_info['row_info'].get('part_no', 'Unknown_Part')
                                     part_desc = file_info['row_info'].get('description', 'Unknown_Desc')
-
+            
                                     # Clean the strings for safe file/folder names
                                     vendor_safe = re.sub(r'[^\w\-_.]', '_', str(vendor_code))
                                     part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
                                     part_desc_safe = re.sub(r'[^\w\-_.]', '_', str(part_desc))
-
-                                    # The folder is ONLY the vendor code.
+            
+                                    # The folder is ONLY the vendor code
                                     folder_name = vendor_safe
-                                    unique_filename = file_info['filename']
-                                    # The final path inside the ZIP file is now unique
-                                    zip_path = f"{folder_name}/{unique_filename}"
-                                    # Write the file to the correct unique path in the ZIP
-                                    zip_file.writestr(zip_path, file_info['data'])
-                                    # The filename contains all three components.
-                                    custom_filename = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}.xlsx"
-
-                                    # The final path inside the ZIP file: VendorFolder/Vendor_Part_Desc.xlsx
+            
+                                    # Create base filename
+                                    base_filename = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}"
+            
+                                    # Make filename unique by adding counter if needed
+                                    if base_filename in filename_counter:
+                                        filename_counter[base_filename] += 1
+                                        custom_filename = f"{base_filename}_{filename_counter[base_filename]:03d}.xlsx"
+                                    else:
+                                        filename_counter[base_filename] = 0
+                                        custom_filename = f"{base_filename}.xlsx"
+                                    # The final path inside the ZIP file
                                     zip_path = f"{folder_name}/{custom_filename}"
-                                    
+            
                                     # Write the file to the correct path in the ZIP
                                     zip_file.writestr(zip_path, file_info['data'])
-                                # --- END: CORRECTED FOLDER LOGIC ---
                                     
                                 # Add generation report to the root of the ZIP
                                 report_content = "Template Generation Report\n"
