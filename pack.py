@@ -894,7 +894,6 @@ class EnhancedTemplateMapperWithImages:
                     'part information', 'part info', 'part', 'component', 'item', 'component information'
                 ],
                 'field_mappings': {
-                    'l': 'Part L',
                     'length': 'Part L',
                     'part l': 'Part L',
                     'component l': 'Part L',
