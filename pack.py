@@ -1283,87 +1283,71 @@ class EnhancedTemplateMapperWithImages:
     # *** NEW METHOD: Read procedure steps from Excel template ***
     def read_procedure_steps_from_template(self, template_path, packaging_type=None):
         """
-        Reads procedure steps by respecting the visual structure and boundaries of the template.
-        This version STOPS reading when it hits the "Reference Image" section.
+        Final robust version: Reads steps only from the clearly defined 'Packaging Procedure' block.
+        It finds the start and end of the block and ignores everything outside of it.
+        This prevents duplicate steps and the inclusion of unwanted labels.
         """
         try:
-            print("\n=== READING PROCEDURE STEPS (STRUCTURAL AWARENESS VERSION) ===")
+            print("\n=== READING PROCEDURE STEPS (BLOCK-AWARE VERSION) ===")
             st.write(f"📖 Reading procedure steps from template...")
-        
+    
             workbook = openpyxl.load_workbook(template_path)
             worksheet = workbook.active
-        
+    
             procedure_steps = []
-            start_row = 28  # The row where "Packaging Procedure" starts
-            max_search_rows = 50 
-            empty_row_limit = 3
-            empty_row_counter = 0
+            start_row = -1
+            end_row = -1
+            
+            # --- STEP 1: Find the start and end row numbers of the procedure block ---
+            for row in worksheet.iter_rows(min_row=1, max_row=50, min_col=1, max_col=5):
+                for cell in row:
+                    if cell.value and isinstance(cell.value, str):
+                        cell_text_lower = cell.value.lower().strip()
+                        if "packaging procedure" in cell_text_lower:
+                            start_row = cell.row
+                        # Use a very specific stop phrase from your screenshot
+                        elif "reference image/pictures" in cell_text_lower:
+                            end_row = cell.row
+                            break
+                if end_row != -1:
+                    break
+            
+            if start_row == -1:
+                st.warning("Could not find the 'Packaging Procedure' start header in the template.")
+                return []
+            if end_row == -1:
+                st.warning("Could not find the 'Reference Image/Pictures' end header. This might lead to extra steps.")
+                end_row = start_row + 25 # Fallback to prevent an infinite loop
 
-            # --- DEFINITIVE FIX: Define boundary keywords that MUST stop the process ---
-            # From your screenshot, "Reference Image/Pictures" is the hard stop signal.
-            boundary_keywords = ["reference image", "pictures", "image/pictures"]
+            print(f"✅ Procedure block identified: Reading from row {start_row + 1} up to row {end_row - 1}")
 
-            # Search starts from row 28
-            for row_num in range(start_row, start_row + max_search_rows):
-                # 1. --- Boundary Check ---
-                # Before doing anything else, scan the first few cells of the row for a stop signal.
-                is_boundary_found = False
-                for col_num in range(1, 10): # Check columns A to J
-                    try:
-                        cell = worksheet.cell(row=row_num, column=col_num)
-                        if cell.value and isinstance(cell.value, str):
-                            cell_text_lower = cell.value.lower().strip()
-                            if any(keyword in cell_text_lower for keyword in boundary_keywords):
-                                print(f"✅ Boundary found at row {row_num} with text: '{cell.value}'. STOPPING step search.")
-                                is_boundary_found = True
-                                break # Exit the column check loop
-                    except:
-                        continue
-                if is_boundary_found:
-                    break # Exit the main row search loop. THIS PREVENTS READING ANY FURTHER.
-
-                # 2. --- Step Text Extraction (if not a boundary) ---
-                step_text = ""
-                row_has_content = False
-                # Focus only on the columns where the actual step text is (e.g., B, C, D)
-                for col_num in range(2, 5): 
-                    try:
-                        cell = worksheet.cell(row=row_num, column=col_num)
-                        if cell.value and isinstance(cell.value, str) and str(cell.value).strip():
-                            # This handles merged cells by getting value from top-left
-                            text_value = str(cell.value).strip()
-                            if text_value:
-                                step_text = text_value
-                                row_has_content = True
-                                break # Found the text for this row, no need to check other columns
-                    except:
-                        continue
-
-                # 3. --- Process Found Text ---
-                if row_has_content:
-                    # Add the step and reset the counter for empty rows
-                    if step_text not in procedure_steps:
+            # --- STEP 2: Iterate ONLY within the identified block ---
+            # For each row, we ONLY check the cell in column B (index 2). This prevents duplicates.
+            for row_num in range(start_row + 1, end_row):
+                # Target the specific cell where the step text begins
+                cell = worksheet.cell(row=row_num, column=2)
+                
+                if cell.value and isinstance(cell.value, str):
+                    step_text = cell.value.strip()
+                    
+                    # --- FINAL FILTER ---
+                    # 1. Ensure text is not empty.
+                    # 2. Ensure text has more than 3 words (this filters out labels like "Secondary Packaging").
+                    if step_text and len(step_text.split()) > 3:
                         procedure_steps.append(step_text)
                         print(f"📝 Found step {len(procedure_steps)}: {step_text[:60]}...")
-                    empty_row_counter = 0
-                else:
-                    # This row was empty, increment the counter
-                    empty_row_counter += 1
-                    if empty_row_counter >= empty_row_limit:
-                        print(f"✅ Found {empty_row_limit} consecutive empty rows. Stopping step search.")
-                        break
-            
+
             workbook.close()
-        
+    
             print(f"✅ FINAL COUNT: Successfully read {len(procedure_steps)} procedure steps.")
             st.write(f"✅ Found {len(procedure_steps)} procedure steps in template")
-        
+    
             return procedure_steps
         except Exception as e:
             print(f"❌ Error reading procedure steps from template: {e}")
             st.error(f"Error reading procedure steps from template: {e}")
             return []
-
+            
     def substitute_placeholders_in_steps(self, procedure_steps, data_dict):
         """
         Replace placeholders in procedure steps with actual data values.
