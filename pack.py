@@ -2802,16 +2802,6 @@ def main():
     elif st.session_state.current_step == 6:
         st.header("🎨 Step 6: Generate Final Documents with Smart Placement")
     
-        # Configuration options
-        with st.expander("⚙️ Generation Settings", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                use_smart_placement = st.checkbox("🧠 Use Smart Image Placement", value=True)
-                preserve_aspect_ratio = st.checkbox("📐 Preserve Image Aspect Ratios", value=True)
-            with col2:
-                image_quality = st.selectbox("🖼️ Image Quality", ["High", "Medium", "Low"], index=0)
-                max_image_size = st.slider("📏 Max Image Size (cm)", 2, 10, 5)
-    
         # Generation summary
         total_templates = len(st.session_state.all_row_data) if hasattr(st.session_state, 'all_row_data') else 0
         total_images = 0
