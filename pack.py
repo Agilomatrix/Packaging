@@ -1030,7 +1030,7 @@ class EnhancedTemplateMapperWithImages:
         
             # Define mappable field patterns for packaging templates
             mappable_patterns = [
-                r'primary\s+packaging\s+type', r'secondary\s+packaging\s+type', # ADDED FOR ROBUSTNESS
+                r'primary\s+packaging\s+type', r'secondary\s+packaging\s+type', 
                 r'packaging\s+type', r'\btype\b',
                 r'\bl[-\s]*mm\b', r'\bw[-\s]*mm\b', r'\bh[-\s]*mm\b',
                 r'\bl\b', r'\bw\b', r'\bh\b',
@@ -1775,35 +1775,6 @@ class EnhancedTemplateMapperWithImages:
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
             
-            COLOR_MAP = {
-                'green': PatternFill(start_color='FFC6EFCE', end_color='FFC6EFCE', fill_type='solid'),
-                'red':   PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid'),
-                'blue':  PatternFill(start_color='FFD9E1F2', end_color='FFD9E1F2', fill_type='solid')
-            }
-            
-            # Force direct capture of critical procedure columns if present in Excel
-            critical_cols = {
-                "Outer L": ["outer l", "outer length", "outer l-mm"],
-                "Outer W": ["outer w", "outer width", "outer w-mm"],
-                "Outer H": ["outer h", "outer height", "outer h-mm"],
-                "Inner L": ["inner l", "inner length", "inner l-mm"],
-                "Inner W": ["inner w", "inner width", "inner w-mm"],
-                "Inner H": ["inner h", "inner height", "inner h-mm"],
-                "Primary Qty/Pack": ["Primary qty/pack", "primary qty/pack", "PRIMARY QTY/PACK"],
-                "Layer":   ["layer", "layers"],
-                "Level":   ["level", "levels"],
-                "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
-            }
-            
-            col_map = {}
-            for canonical, variants in critical_cols.items():
-                for col in data_df.columns:
-                    col_norm = self.preprocess_text(col)
-                    if any(col_norm == self.preprocess_text(v) for v in variants):
-                        col_map[col_norm] = canonical
-                        print(f"DEBUG: Matched column '{col}' ({col_norm}) -> '{canonical}'")
-                        break
-            
             # *** NEW: Read procedure steps from template ONCE ***
             template_procedure_steps = self.read_procedure_steps_from_template(template_path)
             if not template_procedure_steps:
@@ -1830,6 +1801,28 @@ class EnhancedTemplateMapperWithImages:
                 mapping_count = 0
                 data_dict = {}  # Store mapped data for procedure generation
                 filename_parts = {}  # Store parts for filename
+                
+                # =================== FIX STARTS HERE ===================
+                # Pre-load critical data for procedure steps, regardless of whether a matching field
+                # exists in the template. This ensures data is always available for substitution.
+                st.write("...Pre-loading critical data for procedures...")
+                critical_data_map = {
+                    'Secondary Packaging Type': ['Secondary Packaging Type', 'secondary packaging type'],
+                    'Primary Packaging Type': ['Primary Packaging Type', 'primary packaging type'],
+                    'Outer L': ['Outer L', 'outer l', 'Outer Length', 'outer length', 'Outer L-mm'],
+                    'Outer W': ['Outer W', 'outer w', 'Outer Width', 'outer width', 'Outer W-mm'],
+                    'Outer H': ['Outer H', 'outer h', 'Outer Height', 'outer height', 'Outer H-mm'],
+                }
+
+                for canonical_name, possible_names in critical_data_map.items():
+                    for data_col in data_df.columns:
+                        # Find the first matching column in the data file
+                        if self.preprocess_text(data_col) in [self.preprocess_text(p) for p in possible_names]:
+                            raw_value = data_df[data_col].iloc[row_idx]
+                            data_dict[canonical_name] = self.clean_data_value(raw_value)
+                            print(f"DEBUG: Pre-loaded '{canonical_name}' from column '{data_col}' with value '{data_dict[canonical_name]}'")
+                            break  # Move to the next canonical name once found
+                # =================== FIX ENDS HERE =====================
         
                 for coord, mapping in mapping_results.items():
                     if mapping['is_mappable'] and mapping['data_column']:
@@ -1839,7 +1832,6 @@ class EnhancedTemplateMapperWithImages:
                             data_value = self.clean_data_value(raw_value)
                     
                             # Store in data_dict for procedure generation
-                            # Use a consistent key for easier access in substitution
                             template_field_key = mapping.get('template_field', '').strip()
                             data_dict[template_field_key] = data_value
 
@@ -1851,27 +1843,15 @@ class EnhancedTemplateMapperWithImages:
                                         data_dict[canonical_name] = data_value
                                         break
                     
-                            # Force map critical fields if the column matches
-                            normalized_col = self.preprocess_text(data_col)
-                            if normalized_col in col_map:
-                                data_dict[col_map[normalized_col]] = data_value
-                    
                             # Store filename components
-                             # Store filename components by checking the mapped DATA COLUMN name, which is more reliable.
                             data_col_name = mapping.get('data_column', '').lower()
                             if data_col_name:
-                                # Part Number Check (check if not already found)
                                 if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number', 'part_number', 'part #']):
                                     filename_parts['part_no'] = data_value
-                                
-                                # Description Check (check if not already found)
                                 if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc', 'part desc']):
                                     filename_parts['description'] = data_value
-
-                                # Vendor Code Check (check if not already found)
                                 if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code', 'supplier code']):
                                     filename_parts['vendor_code'] = data_value
-                            # --- END: ROBUST FILENAME COMPONENT LOGIC ---
                     
                             # Find target cell and write data
                             target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
@@ -1883,7 +1863,7 @@ class EnhancedTemplateMapperWithImages:
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
                 
-                # *** NEW: Process procedure steps from template instead of hardcoded ***
+                # *** Process procedure steps from template ***
                 steps_written = 0
                 if template_procedure_steps:
                     # Substitute placeholders with actual data
@@ -2312,7 +2292,6 @@ def main():
     if st.session_state.current_step == 1:
         # Display the grid layout directly
         display_packaging_grid()  # Uses HTML/CSS for consistent sizing
-        # display_packaging_grid_alternative()  # Alternative: Uses st.image with fixed width
         
         # Show selected packaging details
         if st.session_state.get('selected_packaging_type'):
@@ -2357,53 +2336,24 @@ def main():
         )
         
         if uploaded_template is not None:
-            # Save uploaded file
             with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_template.name.split('.')[-1]}") as tmp_file:
                 tmp_file.write(uploaded_template.getvalue())
                 st.session_state.template_file = tmp_file.name
             
             st.success("✅ Template file uploaded successfully!")
             
-            # NEW: Analyze template structure and show preview
             with st.expander("📖 Template Analysis", expanded=True):
                 try:
                     mapper = EnhancedTemplateMapperWithImages()
-                    
-                    # Read procedure steps from template
-                    template_procedure_steps = mapper.read_procedure_steps_from_template(
-                        st.session_state.template_file,
-                        st.session_state.selected_packaging_type
-                    )
-                    
+                    template_procedure_steps = mapper.read_procedure_steps_from_template(st.session_state.template_file)
                     if template_procedure_steps:
                         st.success(f"✅ Found {len(template_procedure_steps)} procedure steps in template")
-                        with st.expander("Preview Procedure Steps"):
-                            for i, step in enumerate(template_procedure_steps[:5], 1):  # Show first 5
-                                st.write(f"{i}. {step[:100]}..." if len(step) > 100 else f"{i}. {step}")
-                            if len(template_procedure_steps) > 5:
-                                st.write(f"... and {len(template_procedure_steps) - 5} more steps")
                     else:
                         st.warning("⚠️ No procedure steps found in template")
                     
-                    # Find template fields
-                    template_fields, image_areas = mapper.find_template_fields_with_context_and_images(
-                        st.session_state.template_file
-                    )
-                    
+                    template_fields, _ = mapper.find_template_fields_with_context_and_images(st.session_state.template_file)
                     if template_fields:
                         st.success(f"✅ Found {len(template_fields)} mappable fields in template")
-                        with st.expander("Preview Template Fields"):
-                            fields_by_section = {}
-                            for field_info in template_fields.values():
-                                section = field_info.get('section_context', 'unknown')
-                                if section not in fields_by_section:
-                                    fields_by_section[section] = []
-                                fields_by_section[section].append(field_info['value'])
-                            
-                            for section, fields in fields_by_section.items():
-                                st.write(f"**{section.replace('_', ' ').title()}**: {', '.join(fields[:5])}")
-                                if len(fields) > 5:
-                                    st.caption(f"... and {len(fields) - 5} more fields")
                     else:
                         st.warning("⚠️ No mappable fields found in template")
                 
@@ -2413,7 +2363,6 @@ def main():
             if st.button("Continue to Data Upload", key="continue_to_step3"):
                 navigate_to_step(3)
         
-        # Back navigation
         if st.button("← Go Back", key="back_from_2"):
             navigate_to_step(1)
     
@@ -2428,7 +2377,6 @@ def main():
         )
         
         if uploaded_data is not None:
-            # Save uploaded file
             with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_data.name.split('.')[-1]}") as tmp_file:
                 tmp_file.write(uploaded_data.getvalue())
                 st.session_state.data_file = tmp_file.name
@@ -2439,798 +2387,171 @@ def main():
                 df = pd.read_excel(st.session_state.data_file)
                 st.write("Data Preview:")
                 st.dataframe(df.head())
-                
-                # NEW: Show column analysis for critical fields
-                with st.expander("📊 Data Column Analysis"):
-                    critical_fields = {
-                        "Procedure Fields": ["Layer", "Level", "x No. of Parts", "x No of Parts"],
-                        "Inner Dimensions": ["Inner L", "Inner W", "Inner H", "Inner Qty/Pack"],
-                        "Outer Dimensions": ["Outer L", "Outer W", "Outer H"],
-                        "Primary Packaging": ["Primary L-mm", "Primary W-mm", "Primary H-mm", "Primary Qty/Pack", "Primary Packaging Type"],
-                        "Secondary Packaging": ["Secondary L-mm", "Secondary W-mm", "Secondary H-mm", "Secondary Packaging Type"],
-                        "Part Information": ["Part No", "Part Description", "Vendor Code", "Vendor Name"]
-                    }
-                    
-                    found_fields = {}
-                    for category, fields in critical_fields.items():
-                        found_fields[category] = []
-                        for field in fields:
-                            matching_cols = [col for col in df.columns if field.lower() in col.lower()]
-                            if matching_cols:
-                                found_fields[category].extend(matching_cols)
-                    
-                    for category, fields in found_fields.items():
-                        if fields:
-                            st.success(f"✅ **{category}**: {', '.join(fields)}")
-                        else:
-                            st.warning(f"⚠️ **{category}**: No matching columns found")
-                
             except Exception as e:
                 st.error(f"Error reading data file: {e}")
             
             if st.button("Continue to Auto-Fill", key="continue_to_step4"):
                 navigate_to_step(4)
         
-        # Back navigation
         if st.button("← Go Back", key="back_from_3"):
             navigate_to_step(2)
     
-    # Step 4: Auto-Fill Template (ENHANCED)
+    # Step 4: Auto-Fill Template
     elif st.session_state.current_step == 4:
-        st.header("🔄 Step 4: Auto-Fill Template with Enhanced Processing")
+        st.header("🔄 Step 4: Auto-Fill Template")
     
-        if st.session_state.mapping_completed and hasattr(st.session_state, 'all_row_data'):
+        if st.session_state.mapping_completed:
             st.success(f"✅ Template auto-filling completed for {len(st.session_state.all_row_data)} rows!")
-        
-            # Show enhanced summary of processed rows
-            with st.expander("View Enhanced Processing Summary", expanded=True):
-                total_mappings = sum(row['mapping_count'] for row in st.session_state.all_row_data)
-                total_steps = sum(row['steps_written'] for row in st.session_state.all_row_data)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("📄 Templates Generated", len(st.session_state.all_row_data))
-                with col2:
-                    st.metric("🔗 Total Field Mappings", total_mappings)
-                with col3:
-                    st.metric("📝 Procedure Steps Written", total_steps)
-                
-                # Detailed row information
-                for i, row_data in enumerate(st.session_state.all_row_data):
-                    with st.container():
-                        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-                        with col1:
-                            st.write(f"**Row {i+1}**: {row_data['filename']}")
-                        with col2:
-                            st.write(f"📊 {row_data['mapping_count']} mappings")
-                        with col3:
-                            st.write(f"📝 {row_data['steps_written']} steps")
-                        with col4:
-                            part_no = row_data.get('part_no', 'N/A')
-                            st.write(f"🔧 {part_no}")
-        
             if st.button("Continue to Image Options", key="continue_to_images"):
                 navigate_to_step(5)
-    
         else:
-            # Enhanced auto-fill process
-            st.info("🚀 Enhanced auto-fill will process templates with procedure steps from your template")
-            
-            # Show what will be processed
-            if st.session_state.template_file and st.session_state.data_file:
-                try:
-                    # Preview what will be processed
-                    df_preview = pd.read_excel(st.session_state.data_file)
-                    st.write(f"📊 Ready to process: {len(df_preview)} rows of data")
-                    
-                    mapper = EnhancedTemplateMapperWithImages()
-                    
-                    # Show procedure steps that will be used
-                    template_steps = mapper.read_procedure_steps_from_template(st.session_state.template_file)
-                    if template_steps:
-                        st.info(f"📖 Will use {len(template_steps)} procedure steps from your template")
-                        with st.expander("Preview Procedure Steps Processing"):
-                            st.write("**Template contains these procedure steps with placeholders:**")
-                            for i, step in enumerate(template_steps[:3], 1):
-                                st.write(f"{i}. {step}")
-                            if len(template_steps) > 3:
-                                st.write(f"... and {len(template_steps) - 3} more steps")
-                            
-                            st.write("**These placeholders will be replaced with actual data:**")
-                            placeholders = ["{Primary Packaging Type}", "{Secondary Packaging Type}", "{x No. of Parts}", "{Level}", "{Layer}", "{Inner L}", "{Inner W}", "{Inner H}", 
-                                          "{Outer L}", "{Outer W}", "{Outer H}", "{Primary Qty/Pack}", "{Secondary L-mm}"]
-                            st.write(", ".join(placeholders))
-                    else:
-                        st.warning("⚠️ No procedure steps found in template")
-                    
-                except Exception as e:
-                    st.error(f"Error previewing processing: {e}")
-            
-            if st.button("🚀 Start Enhanced Auto-Fill Process", key="start_enhanced_autofill", type="primary"):
-                with st.spinner("🔄 Processing templates with enhanced procedure step handling..."):
+            if st.button("🚀 Start Auto-Fill Process", key="start_autofill", type="primary"):
+                with st.spinner("🔄 Processing templates..."):
                     try:
-                        # Create progress tracking
-                        progress_container = st.container()
-                        status_container = st.container()
-                        
                         mapper = EnhancedTemplateMapperWithImages()
-                        
-                        # Enhanced mapping with procedure steps
                         success, all_row_data = mapper.map_template_with_data(
                             st.session_state.template_file,
                             st.session_state.data_file
                         )
-                        
-                        if success and all_row_data:
+                        if success:
                             st.session_state.mapping_completed = True
                             st.session_state.all_row_data = all_row_data
-                            
-                            # Show success summary
-                            with status_container:
-                                st.success("🎉 Enhanced auto-fill completed successfully!")
-                                
-                                # Enhanced metrics
-                                total_mappings = sum(row['mapping_count'] for row in all_row_data)
-                                total_steps = sum(row['steps_written'] for row in all_row_data)
-                                rows_with_steps = sum(1 for row in all_row_data if row['steps_written'] > 0)
-                                
-                                col1, col2, col3, col4 = st.columns(4)
-                                with col1:
-                                    st.metric("📄 Templates", len(all_row_data))
-                                with col2:
-                                    st.metric("🔗 Field Mappings", total_mappings)
-                                with col3:
-                                    st.metric("📝 Procedure Steps", total_steps)
-                                with col4:
-                                    st.metric("✅ Success Rate", f"{rows_with_steps}/{len(all_row_data)}")
-                            
                             st.rerun()
                         else:
-                            st.error("❌ Enhanced auto-fill process failed")
-                        
+                            st.error("❌ Auto-fill process failed")
                     except Exception as e:
-                        st.error(f"❌ Error during enhanced auto-fill: {e}")
-                        st.write("**Error Details:**")
+                        st.error(f"❌ Error during auto-fill: {e}")
                         st.code(traceback.format_exc())
     
         if st.button("← Go Back", key="back_from_4"):
             navigate_to_step(3)
     
-    # Step 5: Choose Image Option (SAME AS BEFORE)
+    # Step 5: Choose Image Option
     elif st.session_state.current_step == 5:
         st.header("🖼️ Step 5: Choose Image Option")
-
-        # Three column layout for three options
         col1, col2, col3 = st.columns(3)
 
         with col1:
             if st.button("🔍 Smart Extract from Data File", use_container_width=True):
                 st.session_state.image_option = 'extract'
-        
-                # Enhanced image extraction
                 with st.spinner("🧠 Analyzing and extracting images..."):
-                    extractor = EnhancedImageExtractor()  # Use the new enhanced extractor
+                    extractor = EnhancedImageExtractor()
                     extracted_images = extractor.extract_images_from_excel(st.session_state.data_file)
-            
                     if extracted_images and 'all_sheets' in extracted_images:
                         st.session_state.extracted_excel_images = extracted_images['all_sheets']
-                        st.success(f"✅ Intelligently extracted {len(st.session_state.extracted_excel_images)} images!")
-                
-                        # Enhanced preview with grouping
-                        st.write("**📊 Extracted Images Analysis:**")
-                        image_types = {}
-                        for img_key, img_data in st.session_state.extracted_excel_images.items():
-                            img_type = img_data['type']
-                            if img_type not in image_types:
-                                image_types[img_type] = 0
-                            image_types[img_type] += 1
-                
-                        # Show type distribution
-                        cols = st.columns(len(image_types))
-                        for i, (img_type, count) in enumerate(image_types.items()):
-                            with cols[i]:
-                                st.metric(f"{img_type.capitalize()}", count)
-                
-                        # Show confidence levels
-                        high_confidence = sum(1 for img in st.session_state.extracted_excel_images.values() 
-                                              if img.get('confidence', 0) > 0.7)
-                        st.info(f"🎯 {high_confidence} images classified with high confidence")
-                
+                        st.success(f"✅ Extracted {len(st.session_state.extracted_excel_images)} images!")
                     else:
-                        st.warning("No images found in the Excel file")
-
+                        st.warning("No images found in the Excel file.")
         with col2:
             if st.button("📁 Upload New Images", use_container_width=True):
                 st.session_state.image_option = 'upload'
-
         with col3:
             if st.button("📄 Generate Without Images", use_container_width=True):
                 st.session_state.image_option = 'no_images'
 
-        # Handle upload new images option (Enhanced)
         if st.session_state.image_option == 'upload':
             st.subheader("📤 Upload Images by Type")
-    
             image_types = ['current', 'primary', 'secondary', 'label']
-            type_descriptions = {
-                'current': 'Current/Present packaging state',
-                'primary': 'Inner/Primary packaging',
-                'secondary': 'Outer/Secondary packaging', 
-                'label': 'Labels, barcodes, or identification'
-            }
-    
-            uploaded_count = 0
             for img_type in image_types:
-                with st.expander(f"📋 {img_type.capitalize()} Packaging Image", expanded=False):
-                    st.write(f"*{type_descriptions[img_type]}*")
-            
-                    uploaded_img = st.file_uploader(
-                        f"Choose {img_type} image",
-                        type=['png', 'jpg', 'jpeg', 'gif', 'bmp'],
-                        key=f"img_upload_{img_type}"
-                    )
-            
-                    if uploaded_img is not None:
-                        # Convert to base64
-                        img_bytes = uploaded_img.read()
-                        img_b64 = base64.b64encode(img_bytes).decode()
-                
-                        # Store in session state with enhanced metadata
-                        st.session_state.uploaded_images[f"{img_type}_uploaded"] = {
-                            'data': img_b64,
-                            'format': uploaded_img.type.split('/')[-1].upper(),
-                            'size': (0, 0),  # Will be determined when processing
-                            'type': img_type,
-                            'confidence': 1.0,  # User uploaded = high confidence
-                            'source': 'user_upload'
-                        }
-                
-                        uploaded_count += 1
-                
-                        # Preview with analysis
-                        col1, col2 = st.columns([1, 2])
-                        with col1:
-                            st.image(f"data:image/{uploaded_img.type.split('/')[-1]};base64,{img_b64}", width=150)
-                        with col2:
-                            st.success(f"✅ {img_type.capitalize()} image uploaded")
-                            st.write(f"**Size**: {len(img_bytes):,} bytes")
-                            st.write(f"**Format**: {uploaded_img.type}")
-    
-            if uploaded_count > 0:
-                st.success(f"📁 {uploaded_count} images uploaded successfully!")
+                uploaded_img = st.file_uploader(f"Choose {img_type} image", type=['png', 'jpg', 'jpeg'], key=f"img_upload_{img_type}")
+                if uploaded_img:
+                    img_bytes = uploaded_img.read()
+                    img_b64 = base64.b64encode(img_bytes).decode()
+                    st.session_state.uploaded_images[f"{img_type}_uploaded"] = {'data': img_b64, 'type': img_type}
+                    st.image(img_bytes, width=150)
 
-        # Handle no images option
-        elif st.session_state.image_option == 'no_images':
-            st.subheader("📄 Text-Only Generation Mode")
-            st.info("""
-                **📝 Text-Only Mode Selected**
-                Your documents will be generated using only the data from your spreadsheet without any images. This mode:
-                ✅ **Faster Processing** - Quicker generation without image analysis  
-                ✅ **Smaller File Sizes** - Lighter documents for easier sharing  
-                ✅ **Focus on Content** - Emphasizes textual information and data  
-                ✅ **Universal Compatibility** - Works with all systems and formats  
-                **Note:** You can always regenerate with images later if needed.
-            """)
-        
-            # Optional: Allow users to add a note about why no images
-            image_note = st.text_area(
-                "📝 Optional: Add a note about image availability",
-                placeholder="e.g., 'Images to be provided separately' or 'Product images pending approval'",
-                help="This note will be included in generated documents to explain the absence of images"
-            )
-        
-            if image_note:
-                st.session_state.no_images_note = image_note
-        
-            # Show what will be included instead
-            with st.expander("📋 What will be included in text-only mode"):
-                st.write("""
-                    - ✅ All part numbers and specifications
-                    - ✅ Vendor information and codes  
-                    - ✅ Descriptions and technical details
-                    - ✅ Packaging requirements and notes
-                    - ✅ Regulatory and compliance information
-                    - ✅ Custom formatting and styling
-                    - ❌ Product images and visual references
-                    - ❌ Packaging photos and diagrams
-                """)
-
-        # Auto-match option for extracted images (only show if extract option is selected)
-        if (st.session_state.image_option == 'extract' and st.session_state.extracted_excel_images and hasattr(st.session_state, 'all_row_data')):
-            st.subheader("🎯 Auto-Match Images to Parts")
-            if st.button("🤖 Auto-Match Images to Current Part Data"):
-                with st.spinner("Matching images to part numbers..."):
-                    matched_results = {}
-                    extractor = EnhancedImageExtractor()
-                    # Store the extracted images in the correct format expected by the method
-                    all_extracted_images = {'all_sheets': st.session_state.extracted_excel_images}
-                    for idx, row_data in enumerate(st.session_state.all_row_data):
-                        part_no = row_data.get('part_no', f'Part_{idx}')
-                        vendor_code = row_data.get('vendor_code', 'Unknown')
-                        st.write(f"🔍 Processing part: {part_no}")
-                        # Correct method call with proper parameters
-                        part_images = extractor.extract_images_for_part(
-                            st.session_state.data_file,
-                            part_no,
-                            all_extracted_images,  # This was missing!
-                            vendor_code,
-                            current_row=idx + 2  # Assuming row 1 is header, so data starts from row 2
-                        )
-            
-                        if part_images:
-                            matched_results[row_data.get('filename', f'Part_{idx}')] = {
-                                'images': part_images,
-                                'count': len(part_images),
-                                'part_no': part_no,
-                                'vendor': vendor_code
-                            }
-                            st.write(f"✅ Found {len(part_images)} images for {part_no}")
-                        else:
-                            st.write(f"⚠️ No images found for {part_no}")
-                            matched_results[row_data.get('filename', f'Part_{idx}')] = {
-                                'images': {},
-                                'count': 0,
-                                'part_no': part_no,
-                                'vendor': vendor_code
-                            }
-                    st.session_state.matched_part_images = matched_results
-                    # Show matching summary
-                    total_matched = sum(result['count'] for result in matched_results.values())
-                    parts_with_images = len([r for r in matched_results.values() if r['count'] > 0])
-        
-                    st.success(f"🎯 Matched {total_matched} images across {parts_with_images}/{len(matched_results)} parts")
-        
-                    # Detailed breakdown
-                    with st.expander("📊 Matching Details"):
-                        for filename, result in matched_results.items():
-                            if result['count'] > 0:
-                                st.success(f"**{result['part_no']}** ({result['vendor']}): {result['count']} images")
-                                # Show image types found
-                                image_types = {}
-                                for img_key, img_data in result['images'].items():
-                                    img_type = img_data.get('type', 'unknown')
-                                    image_types[img_type] = image_types.get(img_type, 0) + 1
-                                type_summary = ", ".join([f"{t}: {c}" for t, c in image_types.items()])
-                                st.caption(f"Types found: {type_summary}")
-                            else:
-                                st.warning(f"**{result['part_no']}** ({result['vendor']}): No images")
-
-        # Continue button with enhanced validation
-        can_continue = False
-        if st.session_state.image_option == 'extract':
-            can_continue = (st.session_state.extracted_excel_images or hasattr(st.session_state, 'matched_part_images'))
-        elif st.session_state.image_option == 'upload':
-            can_continue = len(st.session_state.uploaded_images) > 0
-        elif st.session_state.image_option == 'no_images':
-            can_continue = True  # No images option always allows continuation
-
-        if can_continue:
-            # Show different button text based on option
-            button_text = "🚀 Continue to Final Generation"
-            if st.session_state.image_option == 'no_images':
-                button_text = "📄 Continue to Text-Only Generation"
-        
-            if st.button(button_text, key="continue_to_step6", type="primary"):
+        if st.session_state.image_option:
+             if st.button("Continue to Final Generation", key="continue_to_step6", type="primary"):
                 navigate_to_step(6)
-        else:
-            if st.session_state.image_option == 'extract':
-                st.info("📋 Please extract images or match images to parts before continuing")
-            elif st.session_state.image_option == 'upload':
-                st.info("📋 Please upload at least one image before continuing")
-            else:
-                st.info("📋 Please select an image option to continue")
-    
-        # Back navigation
+
         if st.button("← Go Back", key="back_from_5"):
             navigate_to_step(4)
 
-    # Step 6: Generate Final Document (SAME AS BEFORE - keeping your existing complex logic)
+    # Step 6: Generate Final Document
     elif st.session_state.current_step == 6:
-        st.header("🎨 Step 6: Generate Final Documents with Smart Placement")
-        with st.expander("⚙️ Generation Settings", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                use_smart_placement = st.checkbox("🧠 Use Smart Image Placement", value=True)
-                preserve_aspect_ratio = st.checkbox("📐 Preserve Image Aspect Ratios", value=True)
-            with col2:
-                image_quality = st.selectbox("🖼️ Image Quality", ["High", "Medium", "Low"], index=0)
-                max_image_size = st.slider("📏 Max Image Size (cm)", 2, 10, 5)
-    
-        # Generation summary
-        total_templates = len(st.session_state.all_row_data) if hasattr(st.session_state, 'all_row_data') else 0
-        total_images = 0
-    
-        if st.session_state.image_option == 'extract':
-            if hasattr(st.session_state, 'matched_part_images'):
-                total_images = sum(result['count'] for result in st.session_state.matched_part_images.values())
-            else:
-                total_images = len(st.session_state.extracted_excel_images)
-        elif st.session_state.image_option == 'upload':
-            total_images = len(st.session_state.uploaded_images)
-    
-        # Summary metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("📄 Templates to Generate", total_templates)
-        with col2:
-            st.metric("🖼️ Total Images Available", total_images)
-        with col3:
-            st.metric("🎯 Placement Mode", "Smart" if use_smart_placement else "Fixed")
-    
-        if st.button("🚀 Generate All Templates with Enhanced Placement", type="primary", use_container_width=True):
-            with st.spinner("🎨 Generating templates with smart image placement..."):
+        st.header("🎨 Step 6: Generate Final Documents")
+        if st.button("🚀 Generate All Templates", type="primary", use_container_width=True):
+            with st.spinner("🎨 Generating templates..."):
                 try:
                     extractor = EnhancedImageExtractor()
                     generated_files = []
-                    generation_log = []
-                
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
                 
                     for i, row_data in enumerate(st.session_state.all_row_data):
-                        status_text.text(f"Processing template {i+1}/{total_templates}: {row_data['filename']}")
-                        progress_bar.progress((i + 1) / total_templates)
-                    
-                        # Load the mapped template for this row
                         workbook = openpyxl.load_workbook(row_data['file_path'])
                         worksheet = workbook.active
-                    
-                        # Determine images to add
+                        
                         images_to_add = {}
-                    
                         if st.session_state.image_option == 'extract':
-                            if hasattr(st.session_state, 'matched_part_images'):
-                                # Use pre-matched part-specific images
-                                matched_data = st.session_state.matched_part_images.get(row_data['filename'], {})
-                                images_to_add = matched_data.get('images', {})
-                            else:
-                                # Extract images specific to this part on-the-fly
-                                images_to_add = extractor.extract_images_for_part(
-                                    st.session_state.data_file,
-                                    row_data.get('part_no', ''),
-                                    row_data.get('description', ''),
-                                    row_data.get('vendor_code', '')
-                                )
+                            all_extracted = {'all_sheets': st.session_state.extracted_excel_images}
+                            images_to_add = extractor.extract_images_for_part(
+                                st.session_state.data_file,
+                                row_data.get('part_no', ''),
+                                all_extracted,
+                                row_data.get('vendor_code', ''),
+                                current_row=row_data['row_index'] + 2 
+                            )
                         elif st.session_state.image_option == 'upload':
-                            # Use same uploaded images for all templates
                             images_to_add = st.session_state.uploaded_images
-                    
-                        # Add images to template using enhanced placement
+
                         if images_to_add:
-                            if use_smart_placement:
-                                added_count, temp_paths = extractor.smart_add_images_to_template(
-                                    st.session_state.template_file, worksheet, images_to_add
-                                )
-                                placement_method = "Smart Analysis"
-                            else:
-                                added_count, temp_paths = extractor.add_images_to_template(
-                                    worksheet, images_to_add
-                                )
-                                placement_method = "Fixed Positions"
+                            _, temp_paths = extractor.add_images_to_template(worksheet, images_to_add)
                         
-                            generation_log.append({
-                                'template': row_data['filename'],
-                                'images_added': added_count,
-                                'placement_method': placement_method,
-                                'part_no': row_data.get('part_no', 'N/A'),
-                                'vendor': row_data.get('vendor_code', 'N/A')
-                            })
-                        else:
-                            generation_log.append({
-                                'template': row_data['filename'],
-                                'images_added': 0,
-                                'placement_method': 'No Images',
-                                'part_no': row_data.get('part_no', 'N/A'),
-                                'vendor': row_data.get('vendor_code', 'N/A')
-                            })
-                    
-                        # Save final document with enhanced naming
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        part_no_safe = re.sub(r'[^\w\-_.]', '_', str(row_data.get('part_no', 'Unknown')))
-                        vendor_safe = re.sub(r'[^\w\-_.]', '_', str(row_data.get('vendor_code', 'Unknown')))
-                        
-                        # Add row index to ensure uniqueness - this prevents duplicate filenames
-                        row_index = str(i + 1).zfill(3)  # Zero-padded to 3 digits (001, 002, etc.)
-                        final_filename = f"{vendor_safe}_{part_no_safe}_R{row_index}_{timestamp}.xlsx"
-                    
-                        final_filename = f"{vendor_safe}_{part_no_safe}_{timestamp}.xlsx"
-                    
+                        final_filename = f"Final_{row_data['filename']}"
                         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
                             workbook.save(tmp_file.name)
-                        
                             with open(tmp_file.name, 'rb') as f:
                                 file_bytes = f.read()
+                            generated_files.append({'filename': final_filename, 'data': file_bytes})
                         
-                            generated_files.append({
-                                'filename': final_filename,
-                                'data': file_bytes,
-                                'row_info': row_data,
-                                'images_count': len(images_to_add),
-                                'generation_info': generation_log[-1]
-                            })
-                    
                         workbook.close()
-                    
-                        # Cleanup temporary image files
                         if 'temp_paths' in locals():
                             for temp_path in temp_paths:
                                 try:
                                     os.unlink(temp_path)
-                                except:
-                                    pass
+                                except: pass
                 
-                    progress_bar.progress(1.0)
-                    status_text.text("✅ Generation complete!")
-                
-                    st.success(f"🎉 Successfully generated {len(generated_files)} enhanced templates!")
-                
-                    # Show generation summary
-                    st.subheader("📊 Generation Summary")
-                
-                    summary_df = pd.DataFrame(generation_log)
-                    col1, col2 = st.columns([2, 1])
-                
-                    with col1:
-                        st.dataframe(summary_df, use_container_width=True)
-                
-                    with col2:
-                        total_images_placed = summary_df['images_added'].sum()
-                        templates_with_images = len(summary_df[summary_df['images_added'] > 0])
-                    
-                        st.metric("🖼️ Total Images Placed", total_images_placed)
-                        st.metric("📄 Templates with Images", templates_with_images)
-                        st.metric("📈 Success Rate", f"{templates_with_images/len(summary_df)*100:.1f}%")
-                
-                    # Enhanced download section
+                    st.success(f"🎉 Successfully generated {len(generated_files)} templates!")
+
+                    # Download Section
                     st.subheader("📥 Download Generated Templates")
-                
-                    # Tabs for different download options
-                    tab1, tab2, tab3 = st.tabs(["📋 Individual Downloads", "📦 Bulk Download", "📊 Generation Report"])
-                
-                    with tab1:
-                        for file_idx, file_info in enumerate(generated_files):
-                            with st.container():
-                                col1, col2, col3 = st.columns([2, 1, 1])
-                                with col1:
-                                    st.write(f"**{file_info['filename']}**")
-                                    st.caption(f"Vendor: {file_info['row_info'].get('vendor_code', 'N/A')} | "
-                                               f"Part: {file_info['row_info'].get('part_no', 'N/A')} | "
-                                               f"Images: {file_info['images_count']}")
-                                with col2:
-                                    st.write(f"📊 {file_info['generation_info']['placement_method']}")
-                                    if file_info['images_count'] > 0:
-                                        st.success(f"✅ {file_info['images_count']} images")
-                                    else:
-                                        st.warning("⚠️ No images")
-                                with col3:
-                                    # FIXED: Use file index to ensure unique keys
-                                    st.download_button(
-                                        label="📥 Download",
-                                        data=file_info['data'],
-                                        file_name=file_info['filename'],
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        key=f"download_file_{file_idx}_{timestamp}"  # Unique key using index and timestamp
-                                    )
-                                st.divider()
-                
-                    with tab2:
-                        if len(generated_files) > 1:
-                            # Create ZIP with organized structure
-                            zip_buffer = io.BytesIO()
-                            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                                # Track filenames to ensure uniqueness
-                                filename_counter = {}
-        
-                                # Loop through each generated file directly
-                                for idx, file_info in enumerate(generated_files):
-                                    # Get the already-processed values from the row_info dictionary
-                                    vendor_code = file_info['row_info'].get('vendor_code', 'Unknown_Vendor')
-                                    part_no = file_info['row_info'].get('part_no', 'Unknown_Part')
-                                    part_desc = file_info['row_info'].get('description', 'Unknown_Desc')
-            
-                                    # Clean the strings for safe file/folder names
-                                    vendor_safe = re.sub(r'[^\w\-_.]', '_', str(vendor_code))
-                                    part_no_safe = re.sub(r'[^\w\-_.]', '_', str(part_no))
-                                    part_desc_safe = re.sub(r'[^\w\-_.]', '_', str(part_desc))
-            
-                                    # The folder is ONLY the vendor code
-                                    folder_name = vendor_safe
-            
-                                    # Create base filename
-                                    base_filename = f"{vendor_safe}_{part_no_safe}_{part_desc_safe}"
-            
-                                    # Make filename unique by adding counter if needed
-                                    if base_filename in filename_counter:
-                                        filename_counter[base_filename] += 1
-                                        custom_filename = f"{base_filename}_{filename_counter[base_filename]:03d}.xlsx"
-                                    else:
-                                        filename_counter[base_filename] = 0
-                                        custom_filename = f"{base_filename}.xlsx"
-                                    # The final path inside the ZIP file
-                                    zip_path = f"{folder_name}/{custom_filename}"
-            
-                                    # Write the file to the correct path in the ZIP
-                                    zip_file.writestr(zip_path, file_info['data'])
-                                    
-                                # Add generation report to the root of the ZIP
-                                report_content = "Template Generation Report\n"
-                                report_content += "=" * 40 + "\n\n"
-                                report_content += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                                report_content += f"Total templates: {len(generated_files)}\n"
-                                # Add more report details as needed...
-        
-                                zip_file.writestr("Generation_Report.txt", report_content)
-    
-                            zip_buffer.seek(0)
-    
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.info("📁 ZIP organized by vendor folders.")
-    
-                            with col2:
-                                st.download_button(
-                                    label="📦 Download All Templates (ZIP)",
-                                    data=zip_buffer.getvalue(),
-                                    file_name=f"Enhanced_Templates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                                    mime="application/zip",
-                                    key="download_enhanced_zip",
-                                    use_container_width=True
-                                )
-                
-                    with tab3:
-                        # Detailed generation report
-                        st.write("**📈 Performance Metrics**")
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                        for file_info in generated_files:
+                            zip_file.writestr(file_info['filename'], file_info['data'])
                     
-                        metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-                        with metrics_col1:
-                            avg_images_per_template = total_images_placed / len(generated_files) if generated_files else 0
-                            st.metric("📊 Avg Images per Template", f"{avg_images_per_template:.1f}")
-                    
-                        with metrics_col2:
-                            placement_methods = summary_df['placement_method'].value_counts()
-                            most_common_method = placement_methods.index[0] if not placement_methods.empty else "None"
-                            st.metric("🎯 Primary Placement Method", most_common_method)
-                    
-                        with metrics_col3:
-                            templates_without_images = len(summary_df[summary_df['images_added'] == 0])
-                            st.metric("⚠️ Templates Without Images", templates_without_images)
-                    
-                        # Detailed breakdown by vendor
-                        if len(summary_df) > 0:
-                            st.write("**📊 Breakdown by Vendor**")
-                            vendor_summary = summary_df.groupby('vendor').agg({
-                                'images_added': ['count', 'sum', 'mean'],
-                                'template': 'count'
-                            }).round(1)
-                        
-                            vendor_summary.columns = ['Templates', 'Total Images', 'Avg Images', 'Template Count']
-                            st.dataframe(vendor_summary, use_container_width=True)
-            
+                    st.download_button(
+                        label="📦 Download All Templates (ZIP)",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"Generated_Templates_{datetime.now().strftime('%Y%m%d')}.zip",
+                        mime="application/zip",
+                        use_container_width=True
+                    )
                 except Exception as e:
-                    st.error(f"❌ Error generating enhanced templates: {e}")
-                    st.write("**Error Details:**")
+                    st.error(f"❌ Error generating templates: {e}")
                     st.code(traceback.format_exc())
-                
-                    # Provide diagnostic information
-                    st.write("**Diagnostic Information:**")
-                    st.write(f"- Template file exists: {os.path.exists(st.session_state.template_file) if hasattr(st.session_state, 'template_file') else 'No template file'}")
-                    st.write(f"- Data file exists: {os.path.exists(st.session_state.data_file) if hasattr(st.session_state, 'data_file') else 'No data file'}")
-                    st.write(f"- Row data available: {len(st.session_state.all_row_data) if hasattr(st.session_state, 'all_row_data') else 0} rows")
-                    st.write(f"- Image option: {st.session_state.image_option}")
-    
-        # Advanced options
-        with st.expander("🛠️ Advanced Options"):
-            col1, col2 = st.columns(2)
         
-            with col1:
-                if st.button("🔍 Analyze Template Structure"):
-                    if hasattr(st.session_state, 'template_file'):
-                        with st.spinner("Analyzing template..."):
-                            extractor = EnhancedImageExtractor()
-                            zones = extractor.analyze_template_structure(st.session_state.template_file)
-                        
-                            st.write("**Detected Image Placement Zones:**")
-                            for zone_type, zone_info in zones.items():
-                                if zone_info:
-                                    st.success(f"✅ {zone_type}: {zone_info['cell']} "
-                                               f"({zone_info['width_cells']}x{zone_info['height_cells']} cells)")
-                                else:
-                                    st.warning(f"⚠️ {zone_type}: No suitable zone found")
-        
-            with col2:
-                if st.button("📊 Preview Image Assignments") and st.session_state.image_option == 'extract':
-                    if hasattr(st.session_state, 'matched_part_images'):
-                        st.write("**Image-to-Part Assignments:**")
-                        for filename, result in st.session_state.matched_part_images.items():
-                            with st.expander(f"{filename} ({result['count']} images)"):
-                                for img_key, img_data in result['images'].items():
-                                    col1, col2 = st.columns([1, 2])
-                                    with col1:
-                                        st.image(f"data:image/png;base64,{img_data['data']}", width=100)
-                                    with col2:
-                                        st.write(f"**Type**: {img_data['type']}")
-                                        st.write(f"**Confidence**: {img_data.get('confidence', 0.5):.1f}")
-                                        st.write(f"**Size**: {img_data['size']}")
-    
-        # Back navigation
         if st.button("← Go Back", key="back_from_6"):
             navigate_to_step(5)
     
-    # Sidebar with help and information
+    # Sidebar
     with st.sidebar:
         st.header("ℹ️ Help & Information")
-        
-        st.subheader("Current Progress")
         st.write(f"**Step**: {st.session_state.current_step}/6")
         if st.session_state.selected_packaging_type:
             st.write(f"**Packaging Type**: {st.session_state.selected_packaging_type}")
-        
-        # Enhanced status display
-        if hasattr(st.session_state, 'all_row_data') and st.session_state.all_row_data:
-            st.subheader("📊 Processing Status")
-            total_templates = len(st.session_state.all_row_data)
-            total_mappings = sum(row['mapping_count'] for row in st.session_state.all_row_data)
-            total_steps = sum(row['steps_written'] for row in st.session_state.all_row_data)
-            
-            st.write(f"**Templates Ready**: {total_templates}")
-            st.write(f"**Field Mappings**: {total_mappings}")
-            st.write(f"**Procedure Steps**: {total_steps}")
-        
         st.subheader("Instructions")
         st.write("""
-        1. **Select Packaging Type**: Choose from predefined packaging types
-        2. **Upload Template**: Upload your Excel template file
-        3. **Upload Data**: Upload Excel file with part data
-        4. **Auto-Fill**: Enhanced AI mapping with procedure steps
-        5. **Add Images**: Extract from Excel or upload new images
-        6. **Generate**: Create final template with images
+        1. **Select Type**: Choose a packaging type.
+        2. **Upload Template**: Upload your Excel template.
+        3. **Upload Data**: Upload your Excel data file.
+        4. **Auto-Fill**: Let the AI map and fill the data.
+        5. **Add Images**: Choose an image option.
+        6. **Generate**: Download your final documents.
         """)
-        
-        st.subheader("✨ Enhanced Features")
-        st.write("""
-        - **Smart Procedure Processing**: Reads steps directly from template
-        - **Placeholder Substitution**: Replaces {placeholders} with real data
-        - **Section-Based Mapping**: Intelligent field recognition
-        - **Multi-Row Processing**: Handles multiple parts automatically
-        """)
-        
-        st.subheader("Supported Formats")
-        st.write("**Template Files**: .xlsx, .xls, .docx")
-        st.write("**Data Files**: .xlsx, .xls")
-        st.write("**Image Files**: .png, .jpg, .jpeg, .gif, .bmp")
-        
-        # Enhanced reset with confirmation
         if st.button("🔄 Reset All", type="secondary"):
-            # Show confirmation in main area
-            st.session_state.show_reset_confirmation = True
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
             st.rerun()
-        
-        # Handle reset confirmation
-        if st.session_state.get('show_reset_confirmation', False):
-            st.warning("⚠️ This will clear all progress and uploaded files. Are you sure?")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("✅ Yes, Reset", type="primary"):
-                    # Clean up temporary files
-                    if hasattr(st.session_state, 'all_row_data'):
-                        for row_data in st.session_state.all_row_data:
-                            try:
-                                if 'file_path' in row_data and os.path.exists(row_data['file_path']):
-                                    os.unlink(row_data['file_path'])
-                            except:
-                                pass
-                    
-                    # Reset session state
-                    for key in list(st.session_state.keys()):
-                        if key != 'current_step':
-                            del st.session_state[key]
-                    st.session_state.current_step = 1
-                    st.rerun()
-            with col2:
-                if st.button("❌ Cancel"):
-                    st.session_state.show_reset_confirmation = False
-                    st.rerun()
-
 
 if __name__ == "__main__":
     main()
