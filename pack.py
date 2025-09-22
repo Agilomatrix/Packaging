@@ -1375,7 +1375,7 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('Layer') or '4'
                     ),
                     
-                    # Inner dimensions with robust fallbacks
+                    # This is the FIX: Add fallbacks from the primary/secondary dimensions
                     '{Inner L}': (
                         data_dict.get('Inner L') or
                         data_dict.get('Primary L-mm') or
@@ -1398,7 +1398,6 @@ class EnhancedTemplateMapperWithImages:
                         '1'
                     ),
                     
-                    # Outer dimensions with robust fallbacks
                     '{Outer L}': (
                         data_dict.get('Outer L') or 
                         data_dict.get('Secondary L-mm') or
@@ -1415,7 +1414,6 @@ class EnhancedTemplateMapperWithImages:
                         'XXX'
                     ),
 
-                    # Packaging Types
                     '{Primary Packaging Type}': (
                         data_dict.get('Primary Packaging Type') or 'N/A'
                     ),
@@ -1423,7 +1421,6 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('Secondary Packaging Type') or 'N/A'
                     ),
                     
-                    # Other fields
                     '{Primary Qty/Pack}': (
                         data_dict.get('Primary Qty/Pack') or '1'
                     ),
@@ -1432,29 +1429,10 @@ class EnhancedTemplateMapperWithImages:
                     ),
                     '{Qty/Veh}': (
                         data_dict.get('Qty/Veh') or '1'
-                    ),
-                    '{Secondary L-mm}': (
-                        data_dict.get('Secondary L-mm') or 'XXX'
-                    ),
-                    '{Secondary W-mm}': (
-                        data_dict.get('Secondary W-mm') or 'XXX'
-                    ),
-                    '{Secondary H-mm}': (
-                        data_dict.get('Secondary H-mm') or 'XXX'
-                    ),
-                    '{Primary L-mm}': (
-                        data_dict.get('Primary L-mm') or 'XXX'
-                    ),
-                    '{Primary W-mm}': (
-                        data_dict.get('Primary W-mm') or 'XXX'
-                    ),
-                    '{Primary H-mm}': (
-                        data_dict.get('Primary H-mm') or 'XXX'
                     )
                 }
                 # --- END: MODIFIED SECTION ---
                 
-                # Debug: Show what replacements are being made
                 for placeholder, raw_value in replacements.items():
                     if placeholder in filled_step:
                         clean_value = self.clean_data_value(raw_value)
@@ -1478,7 +1456,7 @@ class EnhancedTemplateMapperWithImages:
         except Exception as e:
             print(f"❌ Error substituting placeholders: {e}")
             st.error(f"Error substituting placeholders: {e}")
-            return procedure_steps  # Return original steps if substitution fails
+            return procedure_steps
 
     def map_data_with_section_context(self, template_fields, data_df):
         """Enhanced mapping with EXACT column name matching"""
@@ -1646,18 +1624,16 @@ class EnhancedTemplateMapperWithImages:
     def map_template_with_data(self, template_path, data_path):
         """Enhanced mapping with section-based approach and multiple row processing"""
         try:
-            # Read data from Excel with proper NaN handling
             data_df = pd.read_excel(data_path)
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
             
-            # --- START: MODIFIED SECTION ---
-            # More comprehensive list of critical column variations
+            # This dictionary defines all the critical data points we need for procedures
+            # and maps various possible column names to a single, standard ("canonical") name.
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
                 "Outer W": ["outer w", "outer width", "outer w-mm", "secondary w-mm", "secondary w"],
                 "Outer H": ["outer h", "outer height", "outer h-mm", "secondary h-mm", "secondary h"],
-                # This is the FIX: Associate "primary" dimension columns with the canonical "Inner" keys
                 "Inner L": ["inner l", "inner length", "inner l-mm", "primary l-mm", "primary l"],
                 "Inner W": ["inner w", "inner width", "inner w-mm", "primary w-mm", "primary w"],
                 "Inner H": ["inner h", "inner height", "inner h-mm", "primary h-mm", "primary h"],
@@ -1668,13 +1644,11 @@ class EnhancedTemplateMapperWithImages:
                 "Level":   ["level", "levels"],
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
             }
-            # --- END: MODIFIED SECTION ---
             
-            # Create a reverse map from normalized column name to canonical name
+            # Create a reverse map from a normalized column name to its standard name
             col_map = {}
             for canonical, variants in critical_cols.items():
                 for variant in variants:
-                    # Map the preprocessed variant to the clean, canonical name
                     col_map[self.preprocess_text(variant)] = canonical
 
             template_procedure_steps = self.read_procedure_steps_from_template(template_path)
@@ -1688,14 +1662,28 @@ class EnhancedTemplateMapperWithImages:
                 
                 workbook = openpyxl.load_workbook(template_path)
                 worksheet = workbook.active
-        
+                
+                data_dict = {}
+                filename_parts = {}
+
+                # --- START: MODIFIED SECTION (THE FIX) ---
+                # Proactively populate data_dict with all critical procedure data first.
+                # This makes the data available regardless of whether a field was mapped visually.
+                for col_name in data_df.columns:
+                    normalized_col = self.preprocess_text(col_name)
+                    if normalized_col in col_map:
+                        canonical_key = col_map[normalized_col]
+                        raw_value = data_df[col_name].iloc[row_idx]
+                        data_value = self.clean_data_value(raw_value)
+                        if data_value: # Only store if there's a value
+                            data_dict[canonical_key] = data_value
+                            print(f"DEBUG (Proactive): Stored '{data_value}' under CANONICAL key: '{canonical_key}' from column '{col_name}'")
+                # --- END: MODIFIED SECTION ---
+
                 template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
                 mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
         
                 mapping_count = 0
-                data_dict = {}
-                filename_parts = {}
-        
                 for coord, mapping in mapping_results.items():
                     if mapping['is_mappable'] and mapping['data_column']:
                         try:
@@ -1703,33 +1691,22 @@ class EnhancedTemplateMapperWithImages:
                             raw_value = data_df[data_col].iloc[row_idx]
                             data_value = self.clean_data_value(raw_value)
                     
-                            # Always store the value under the template's original field name
-                            template_field_key = mapping['template_field']
-                            data_dict[template_field_key] = data_value
-                            print(f"DEBUG: Stored '{data_value}' under template key: '{template_field_key}'")
+                            # Store by template field name for visual placement
+                            data_dict[mapping['template_field']] = data_value
 
-                            # Additionally, check if the DATA COLUMN is a critical one.
-                            # If so, also store it under its canonical name for guaranteed access.
-                            normalized_col = self.preprocess_text(data_col)
-                            if normalized_col in col_map:
-                                canonical_key = col_map[normalized_col]
-                                data_dict[canonical_key] = data_value
-                                print(f"DEBUG: Stored '{data_value}' under CANONICAL key: '{canonical_key}'")
-
+                            # Store filename components
                             data_col_name = mapping.get('data_column', '').lower()
                             if data_col_name:
-                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number', 'part_number', 'part #']):
+                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number']):
                                     filename_parts['part_no'] = data_value
-                                if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc', 'part desc']):
+                                if 'description' not in filename_parts and 'description' in data_col_name:
                                     filename_parts['description'] = data_value
-                                if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code', 'supplier code']):
+                                if 'vendor_code' not in filename_parts and 'vendor code' in data_col_name:
                                     filename_parts['vendor_code'] = data_value
                     
                             target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
-                    
                             if target_cell_coord and data_value:
-                                target_cell = worksheet[target_cell_coord]
-                                target_cell.value = data_value
+                                worksheet[target_cell_coord].value = data_value
                                 mapping_count += 1
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
@@ -1753,17 +1730,10 @@ class EnhancedTemplateMapperWithImages:
         
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
                     workbook.save(tmp_file.name)
-            
                     row_data = {
-                        'row_index': row_idx,
-                        'filename': filename,
-                        'file_path': tmp_file.name,
-                        'data_dict': data_dict,
-                        'mapping_count': mapping_count,
-                        'steps_written': steps_written,
-                        'vendor_code': vendor_code,
-                        'part_no': part_no,
-                        'description': description,
+                        'row_index': row_idx, 'filename': filename, 'file_path': tmp_file.name,
+                        'data_dict': data_dict, 'mapping_count': mapping_count, 'steps_written': steps_written,
+                        'vendor_code': vendor_code, 'part_no': part_no, 'description': description,
                         'procedure_steps': filled_steps if template_procedure_steps else []
                     }
                     st.session_state.all_row_data.append(row_data)
@@ -1778,7 +1748,7 @@ class EnhancedTemplateMapperWithImages:
             st.error(f"❌ Error mapping template: {e}")
             st.write("📋 Traceback:", traceback.format_exc())
             return False, []
-            
+
     def map_data_with_section_context_for_row(self, template_fields, data_df, row_idx):
         """Map data for specific row"""
         mapping_results = {}
@@ -1946,8 +1916,7 @@ class EnhancedTemplateMapperWithImages:
             print(f"💥 Critical error in write_filled_steps_to_template: {e}")
             st.error(f"Critical error writing filled procedure steps: {e}")
             return 0
-
-# ... (The rest of your code from PACKAGING_TYPES down to if __name__ == "__main__": remains exactly the same)
+# Packaging types and procedures from reference code
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
