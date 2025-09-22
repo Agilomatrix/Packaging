@@ -1374,7 +1374,6 @@ class EnhancedTemplateMapperWithImages:
                 
                 print(f"Processing step {i}: {step[:50]}...")
                 
-                # --- START: MODIFIED SECTION ---
                 # Enhanced mapping with multiple fallback options
                 replacements = {
                     # *** CRITICAL: Enhanced quantity mappings - multiple fallbacks ***
@@ -1495,13 +1494,11 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('Secondary H-mm') or
                         'XXX'
                     ),
-                    
-                    # *** NEWLY ADDED ***
+
                     # Primary and Secondary Packaging Types
                     '{Primary Packaging Type}': (
                         data_dict.get('Primary Packaging Type') or
                         data_dict.get('primary packaging type') or
-                        # Fallback for templates that just say "Packaging Type" in the primary section
                         data_dict.get('Packaging Type') or 
                         data_dict.get('packaging type') or
                         'N/A'
@@ -1587,19 +1584,16 @@ class EnhancedTemplateMapperWithImages:
                         'XXX'
                     )
                 }
-                # --- END: MODIFIED SECTION ---
                 
                 # Debug: Show what replacements are being made
                 for placeholder, raw_value in replacements.items():
                     if placeholder in filled_step:
                         clean_value = self.clean_data_value(raw_value)
                         if not clean_value or clean_value == "":
-                            # Use a more appropriate fallback depending on the placeholder
                             if 'Type' in placeholder:
                                 clean_value = 'N/A'
                             else:
                                 clean_value = 'XXX'
-
                         print(f"  Replacing {placeholder} with '{clean_value}' (from: {raw_value})")
                         filled_step = filled_step.replace(placeholder, str(clean_value))
                 
@@ -1765,17 +1759,26 @@ class EnhancedTemplateMapperWithImages:
             st.error(f"Error in map_data_with_section_context: {e}")
         return mapping_results
 
+    # --- START: MODIFIED SECTION ---
     def clean_data_value(self, value):
-        """Clean data value to handle NaN, None, and empty values"""
+        """Clean data value, converting whole-number floats to integers."""
+        # Handle NaN or None first
         if pd.isna(value) or value is None:
             return ""
-        
+
+        # Check if the value is a float that represents a whole number
+        if isinstance(value, float) and value.is_integer():
+            # If so, convert it to an integer first, then to a string
+            return str(int(value))
+
+        # Original logic for all other types (strings, non-whole floats, etc.)
         str_value = str(value).strip()
         
         if str_value.lower() in ['nan', 'none', 'null', 'n/a', '#n/a', '']:
             return ""
             
         return str_value
+    # --- END: MODIFIED SECTION ---
 
     def map_template_with_data(self, template_path, data_path):
         """Enhanced mapping with section-based approach and multiple row processing"""
@@ -1785,7 +1788,6 @@ class EnhancedTemplateMapperWithImages:
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
             
-            # --- START: MODIFIED SECTION ---
             # More comprehensive list of critical column variations
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
@@ -1795,8 +1797,8 @@ class EnhancedTemplateMapperWithImages:
                 "Inner W": ["inner w", "inner width", "inner w-mm"],
                 "Inner H": ["inner h", "inner height", "inner h-mm"],
                 "Primary Qty/Pack": ["primary qty/pack", "primary quantity"],
-                "Primary Packaging Type": ["primary packaging type"], # NEWLY ADDED
-                "Secondary Packaging Type": ["secondary packaging type"], # NEWLY ADDED
+                "Primary Packaging Type": ["primary packaging type"],
+                "Secondary Packaging Type": ["secondary packaging type"],
                 "Layer":   ["layer", "layers"],
                 "Level":   ["level", "levels"],
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
@@ -1808,8 +1810,7 @@ class EnhancedTemplateMapperWithImages:
                 for variant in variants:
                     # Map the preprocessed variant to the clean, canonical name
                     col_map[self.preprocess_text(variant)] = canonical
-            # --- END: MODIFIED SECTION ---
-            
+
             template_procedure_steps = self.read_procedure_steps_from_template(template_path)
             if not template_procedure_steps:
                 st.warning("⚠️ No procedure steps found in template. Will use empty steps.")
@@ -2079,7 +2080,8 @@ class EnhancedTemplateMapperWithImages:
             print(f"💥 Critical error in write_filled_steps_to_template: {e}")
             st.error(f"Critical error writing filled procedure steps: {e}")
             return 0
-# Packaging types and procedures from reference code
+
+# ... (The rest of your code from PACKAGING_TYPES down to if __name__ == "__main__": remains exactly the same)
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
