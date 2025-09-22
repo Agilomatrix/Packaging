@@ -1210,32 +1210,32 @@ class EnhancedTemplateMapperWithImages:
 
     def find_data_cell_for_label(self, worksheet, field_info):
         """
-        Find data cell for a label, with special handling for the 'Problems' field
-        and safer, constrained search for all other fields.
+        Find data cell for a label, using section_context for special handling of the
+        'Problems' field to ensure it is placed correctly in the designated columns.
         """
         try:
             row = field_info['row']
             col = field_info['column']
-            field_text_lower = self.preprocess_text(field_info.get('value', ''))
+            section_context = field_info.get('section_context')
 
-            # --- SPECIAL CASE: Handle "PROBLEMS IF ANY" field directly ---
-            if 'problems' in field_text_lower:
-                # Based on the template, the label is at V23, and the green cell starts at V25.
-                # This is a fixed position relative to the label: (row + 2, same column).
+            # --- SPECIAL CASE: Use section context for the "Problems" / "Remarks" area ---
+            # This is more reliable than checking for the word 'problems'.
+            if section_context == 'miscellaneous_information':
+                # This rule is specific to the template's layout for the "Problems if any" field.
+                # It places the data two rows below the label, which is in the colored area.
                 target_cell_coord = worksheet.cell(row=row + 2, column=col).coordinate
-                st.write(f"INFO: Found 'Problems' field. Targeting specific cell: {target_cell_coord}")
+                st.write(f"INFO: Found '{field_info['value']}' in special section. Targeting cell: {target_cell_coord}")
                 return target_cell_coord
 
             # --- STANDARD PLACEMENT LOGIC FOR ALL OTHER FIELDS ---
-
-            # Define columns to be explicitly ignored for general placement.
-            # The special case above runs first, so this won't block the 'Problems' field.
+            # This logic will now be skipped for the 'Problems' field, solving the conflict.
             IGNORED_COLUMNS = [22, 23, 24, 25] # V, W, X, Y
 
             def is_suitable_data_cell(r, c):
-                """Check if a cell at a given row and column is suitable for data entry."""
+                """Check if a cell is suitable, respecting the ignored columns for standard fields."""
                 if not (1 <= r <= worksheet.max_row and 1 <= c <= worksheet.max_column):
                     return False
+                # This check now correctly applies only to non-special fields.
                 if c in IGNORED_COLUMNS:
                     return False
                 try:
@@ -1259,8 +1259,7 @@ class EnhancedTemplateMapperWithImages:
             if is_suitable_data_cell(row + 1, col):
                 return worksheet.cell(row=row + 1, column=col).coordinate
 
-            # If no suitable cell is found, give up to prevent errors.
-            st.write(f"WARNING: Could not find a safe data cell for label '{field_info['value']}'. Skipping placement.")
+            st.warning(f"WARNING: Could not find a suitable data cell for label '{field_info['value']}'.")
             return None
             
         except Exception as e:
@@ -1629,12 +1628,10 @@ class EnhancedTemplateMapperWithImages:
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
             
-            # --- START: MODIFIED SECTION ---
-            # Define color fills for remarks, ensuring they are available for the loop
+            # Define color fills for remarks
             green_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
             red_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
             yellow_fill = PatternFill(start_color='FFEB9C', end_color='FFEB9C', fill_type='solid')
-            # --- END: MODIFIED SECTION ---
             
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
@@ -1671,7 +1668,6 @@ class EnhancedTemplateMapperWithImages:
                 data_dict = {}
                 filename_parts = {}
 
-                # Proactively populate data_dict with all critical procedure data first.
                 for col_name in data_df.columns:
                     normalized_col = self.preprocess_text(col_name)
                     if normalized_col in col_map:
@@ -1680,7 +1676,6 @@ class EnhancedTemplateMapperWithImages:
                         data_value = self.clean_data_value(raw_value)
                         if data_value:
                             data_dict[canonical_key] = data_value
-                            print(f"DEBUG (Proactive): Stored '{data_value}' under CANONICAL key: '{canonical_key}' from column '{col_name}'")
 
                 template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
                 mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
@@ -1709,17 +1704,17 @@ class EnhancedTemplateMapperWithImages:
                                 worksheet[target_cell_coord].value = data_value
                                 mapping_count += 1
 
-                                # --- START: THE FIX - INTEGRATED COLOR LOGIC ---
-                                # If the current field being processed is the 'Problems' field, apply color.
-                                if 'problems' in self.preprocess_text(mapping['template_field']):
-                                    # Now that we've successfully mapped the 'Problems' field, find the 'remarks' column.
+                                # --- START: CORRECTED COLORING LOGIC ---
+                                # Use the reliable section_context to trigger the coloring.
+                                if mapping['field_info'].get('section_context') == 'miscellaneous_information':
+                                    # Find the 'remarks' column in your data file.
                                     remarks_col = next((col for col in data_df.columns if 'remarks' in col.lower()), None)
                                     
                                     if remarks_col:
                                         remark_color = self.clean_data_value(data_df[remarks_col].iloc[row_idx]).lower()
                                         target_cell = worksheet[target_cell_coord]
                                         
-                                        # Apply the correct color fill based on the remark text
+                                        # Apply the correct color fill based on the remark text.
                                         if remark_color == 'red':
                                             target_cell.fill = red_fill
                                         elif remark_color == 'green':
@@ -1729,13 +1724,11 @@ class EnhancedTemplateMapperWithImages:
                                         
                                         st.write(f"✅ Applied '{remark_color}' color to '{target_cell_coord}'")
                                     else:
-                                        st.warning("⚠️ 'Problems' field mapped, but 'remarks' column not found for coloring.")
-                                # --- END: THE FIX ---
+                                        st.warning("⚠️ Mapped 'Problems' field, but 'remarks' column not found for coloring.")
+                                # --- END: CORRECTED COLORING LOGIC ---
 
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
-                
-                # The old, separate logic for coloring has been removed from here.
                 
                 steps_written = 0
                 if template_procedure_steps:
