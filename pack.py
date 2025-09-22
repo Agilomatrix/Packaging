@@ -1634,8 +1634,8 @@ class EnhancedTemplateMapperWithImages:
             green_fill = PatternFill(start_color='FFC6EFCE', end_color='FFC6EFCE', fill_type='solid')
             red_fill = PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid')
             yellow_fill = PatternFill(start_color='FFFFEB9C', end_color='FFFFEB9C', fill_type='solid')
+            # --- END: MODIFIED SECTION ---
             
-            # This dictionary maps various possible column names to a single, standard ("canonical") name.
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
                 "Outer W": ["outer w", "outer width", "outer w-mm", "secondary w-mm", "secondary w"],
@@ -1650,7 +1650,6 @@ class EnhancedTemplateMapperWithImages:
                 "Level":   ["level", "levels"],
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
             }
-            # --- END: MODIFIED SECTION ---
             
             col_map = {}
             for canonical, variants in critical_cols.items():
