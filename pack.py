@@ -1607,16 +1607,20 @@ class EnhancedTemplateMapperWithImages:
         return mapping_results
 
     def clean_data_value(self, value):
-        """Clean data value, converting whole-number floats to integers."""
-        if pd.isna(value) or value is None:
+        """Clean data value, converting whole-number floats to integers and formatting dates."""
+        if pd.isna(value) or value is None or str(value).strip() == '':
             return ""
+
+        # --- THIS IS THE NEW LOGIC ---
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return value.strftime('%d-%m-%Y')
 
         if isinstance(value, float) and value.is_integer():
             return str(int(value))
 
         str_value = str(value).strip()
         
-        if str_value.lower() in ['nan', 'none', 'null', 'n/a', '#n/a', '']:
+        if str_value.lower() in ['nan', 'none', 'null', 'n/a', '#n/a']:
             return ""
             
         return str_value
@@ -1634,6 +1638,7 @@ class EnhancedTemplateMapperWithImages:
                 "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
                 "Outer W": ["outer w", "outer width", "outer w-mm", "secondary w-mm", "secondary w"],
                 "Outer H": ["outer h", "outer height", "outer h-mm", "secondary h-mm", "secondary h"],
+                # This is the FIX: Associate "primary" dimension columns with the canonical "Inner" keys
                 "Inner L": ["inner l", "inner length", "inner l-mm", "primary l-mm", "primary l"],
                 "Inner W": ["inner w", "inner width", "inner w-mm", "primary w-mm", "primary w"],
                 "Inner H": ["inner h", "inner height", "inner h-mm", "primary h-mm", "primary h"],
@@ -1916,7 +1921,8 @@ class EnhancedTemplateMapperWithImages:
             print(f"💥 Critical error in write_filled_steps_to_template: {e}")
             st.error(f"Critical error writing filled procedure steps: {e}")
             return 0
-# Packaging types and procedures from reference code
+
+# ... (The rest of your code from PACKAGING_TYPES down to if __name__ == "__main__": remains exactly the same)
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
