@@ -1008,7 +1008,6 @@ class EnhancedTemplateMapperWithImages:
             st.error(f"Error in preprocess_text: {e}")
             return ""
 
-    # --- START: MODIFIED SECTION ---
     def is_mappable_field(self, text):
         """Enhanced field detection with specific exclusions to prevent false positives."""
         try:
@@ -1019,9 +1018,7 @@ class EnhancedTemplateMapperWithImages:
             if not text_lower:
                 return False
             
-            # --- THIS IS THE FIX ---
             # Exclude administrative fields that are not meant for data entry.
-            # This prevents "Reviewed by" from being incorrectly identified as a mappable field.
             exclusion_patterns = [
                 'vendor information', 'part information', 'primary packaging', 
                 'secondary packaging', 'packaging instruction', 'procedure', 'steps', 
@@ -1029,10 +1026,8 @@ class EnhancedTemplateMapperWithImages:
                 'reference image/pictures'
             ]
             
-            # If the text matches any exclusion, it's NOT a mappable field.
             for exclusion in exclusion_patterns:
                 if exclusion in text_lower:
-                    # Allow "packaging type" as it's a valid field
                     if 'type' in text_lower and 'packaging' in text_lower:
                         continue
                     print(f"DEBUG: Excluding '{text}' as it matches exclusion '{exclusion}'")
@@ -1042,7 +1037,7 @@ class EnhancedTemplateMapperWithImages:
             mappable_patterns = [
                 r'packaging\s+type', r'\btype\b',
                 r'\bl[-\s]*mm\b', r'\bw[-\s]*mm\b', r'\bh[-\s]*mm\b',
-                r'\b(l|w|h)\b',  # More specific: matches standalone L, W, or H
+                r'\b(l|w|h)\b',
                 r'part\s+l\b', r'part\s+w\b', r'part\s+h\b',
                 r'\blength\b', r'\bwidth\b', r'\bheight\b',
                 r'qty[/\s]*pack', r'quantity\b', r'weight\b', r'empty\s+weight',
@@ -1058,13 +1053,11 @@ class EnhancedTemplateMapperWithImages:
                 r'\bpallet\b', r'\bproblems\b' 
             ]
         
-            # Check against the valid patterns
             for pattern in mappable_patterns:
                 if re.search(pattern, text_lower):
                     print(f"DEBUG: '{text}' matches pattern '{pattern}'")
                     return True
         
-            # Fallback for labels ending in a colon
             if text_lower.endswith(':'):
                 print(f"DEBUG: '{text}' ends with colon")
                 return True
@@ -1075,7 +1068,6 @@ class EnhancedTemplateMapperWithImages:
         except Exception as e:
             st.error(f"Error in is_mappable_field: {e}")
             return False
-    # --- END: MODIFIED SECTION ---
 
     def identify_section_context(self, worksheet, row, col, max_search_rows=15):
         """Enhanced section identification with better pattern matching"""
@@ -1371,216 +1363,96 @@ class EnhancedTemplateMapperWithImages:
                 
                 print(f"Processing step {i}: {step[:50]}...")
                 
-                # Enhanced mapping with multiple fallback options
+                # --- START: MODIFIED SECTION ---
                 replacements = {
-                    # *** CRITICAL: Enhanced quantity mappings - multiple fallbacks ***
                     '{x No. of Parts}': (
-                        data_dict.get('x No. of Parts') or 
-                        data_dict.get('X No. of Parts') or
-                        data_dict.get('x no. of parts') or
-                        data_dict.get('X no. of parts') or
-                        data_dict.get('no. of parts') or
-                        data_dict.get('No. of Parts') or
-                        data_dict.get('number of parts') or
-                        data_dict.get('Number of Parts') or
-                        data_dict.get('parts per pack') or
-                        data_dict.get('Parts Per Pack') or
-                        data_dict.get('qty of parts') or
-                        data_dict.get('Qty of Parts') or
-                        '8'  # Default fallback
+                        data_dict.get('x No. of Parts') or '8'
                     ),
-                
-                    # *** CRITICAL: Enhanced Level mappings - multiple fallbacks ***
                     '{Level}': (
-                        data_dict.get('Level') or
-                        data_dict.get('level') or
-                        data_dict.get('LEVEL') or
-                        data_dict.get('Levels') or
-                        data_dict.get('levels') or
-                        data_dict.get('max level') or
-                        data_dict.get('Max Level') or
-                        data_dict.get('maximum level') or
-                        data_dict.get('Maximum Level') or
-                        data_dict.get('stacking level') or
-                        data_dict.get('Stacking Level') or
-                        '5'  # Default fallback
+                        data_dict.get('Level') or '5'
                     ),
-                
-                    # *** CRITICAL: Enhanced Layer mappings - multiple fallbacks ***
                     '{Layer}': (
-                        data_dict.get('Layer') or
-                        data_dict.get('layer') or
-                        data_dict.get('LAYER') or
-                        data_dict.get('Layers') or
-                        data_dict.get('layers') or
-                        data_dict.get('max layer') or
-                        data_dict.get('Max Layer') or
-                        data_dict.get('maximum layer') or
-                        data_dict.get('Maximum Layer') or
-                        '4'  # Default fallback
+                        data_dict.get('Layer') or '4'
                     ),
                     
-                    # Inner dimensions - try multiple key variations
+                    # Inner dimensions with robust fallbacks
                     '{Inner L}': (
-                        data_dict.get('Inner L') or 
-                        data_dict.get('inner l') or
-                        data_dict.get('Inner l') or
-                        data_dict.get('INNER L') or
-                        data_dict.get('Inner Length') or
-                        data_dict.get('inner length') or
+                        data_dict.get('Inner L') or
+                        data_dict.get('Primary L-mm') or
                         'XXX'
                     ),
                     '{Inner W}': (
-                        data_dict.get('Inner W') or 
-                        data_dict.get('inner w') or
-                        data_dict.get('Inner w') or
-                        data_dict.get('INNER W') or
-                        data_dict.get('Inner Width') or
-                        data_dict.get('inner width') or
+                        data_dict.get('Inner W') or
+                        data_dict.get('Primary W-mm') or
                         'XXX'
                     ),
                     '{Inner H}': (
-                        data_dict.get('Inner H') or 
-                        data_dict.get('inner h') or
-                        data_dict.get('Inner h') or
-                        data_dict.get('INNER H') or
-                        data_dict.get('Inner Height') or
-                        data_dict.get('inner height') or
+                        data_dict.get('Inner H') or
+                        data_dict.get('Primary H-mm') or
                         'XXX'
                     ),
                     
-                    # Inner Qty/Pack - try multiple variations
                     '{Inner Qty/Pack}': (
                         data_dict.get('Inner Qty/Pack') or
-                        data_dict.get('inner qty/pack') or
-                        data_dict.get('Inner qty/pack') or
-                        data_dict.get('INNER QTY/PACK') or
-                        data_dict.get('Inner Quantity') or
-                        data_dict.get('inner quantity') or
+                        data_dict.get('Primary Qty/Pack') or
                         '1'
                     ),
                     
-                    # Outer dimensions - try multiple variations
+                    # Outer dimensions with robust fallbacks
                     '{Outer L}': (
                         data_dict.get('Outer L') or 
-                        data_dict.get('outer l') or
-                        data_dict.get('Outer l') or
-                        data_dict.get('OUTER L') or
-                        data_dict.get('Outer Length') or
-                        data_dict.get('outer length') or
                         data_dict.get('Secondary L-mm') or
                         'XXX'
                     ),
                     '{Outer W}': (
                         data_dict.get('Outer W') or 
-                        data_dict.get('outer w') or
-                        data_dict.get('Outer w') or
-                        data_dict.get('OUTER W') or
-                        data_dict.get('Outer Width') or
-                        data_dict.get('outer width') or
                         data_dict.get('Secondary W-mm') or
                         'XXX'
                     ),
                     '{Outer H}': (
                         data_dict.get('Outer H') or 
-                        data_dict.get('outer h') or
-                        data_dict.get('Outer h') or
-                        data_dict.get('OUTER H') or
-                        data_dict.get('Outer Height') or
-                        data_dict.get('outer height') or
                         data_dict.get('Secondary H-mm') or
                         'XXX'
                     ),
-                    
-                    # Primary and Secondary Packaging Types
+
+                    # Packaging Types
                     '{Primary Packaging Type}': (
-                        data_dict.get('Primary Packaging Type') or
-                        data_dict.get('primary packaging type') or
-                        data_dict.get('Packaging Type') or 
-                        data_dict.get('packaging type') or
-                        'N/A'
+                        data_dict.get('Primary Packaging Type') or 'N/A'
                     ),
                     '{Secondary Packaging Type}': (
-                        data_dict.get('Secondary Packaging Type') or
-                        data_dict.get('secondary packaging type') or
-                        'N/A'
+                        data_dict.get('Secondary Packaging Type') or 'N/A'
                     ),
                     
-                    # Primary Qty/Pack - try multiple variations
+                    # Other fields
                     '{Primary Qty/Pack}': (
-                        data_dict.get('Primary Qty/Pack') or
-                        data_dict.get('primary qty/pack') or
-                        data_dict.get('Primary qty/pack') or
-                        data_dict.get('PRIMARY QTY/PACK') or
-                        data_dict.get('Primary Quantity') or
-                        data_dict.get('primary quantity') or
-                        '1'
+                        data_dict.get('Primary Qty/Pack') or '1'
                     ),
-                    
-                    # Generic Qty/Pack - try multiple variations
                     '{Qty/Pack}': (
-                        data_dict.get('Qty/Pack') or
-                        data_dict.get('qty/pack') or
-                        data_dict.get('QTY/PACK') or
-                        data_dict.get('Quantity') or
-                        data_dict.get('quantity') or
-                        '1'
+                        data_dict.get('Qty/Pack') or '1'
                     ),
                     '{Qty/Veh}': (
-                        data_dict.get('Qty/Veh') or
-                        data_dict.get('qty/veh') or
-                        data_dict.get('QTY/VEH') or
-                        data_dict.get('Qty/Pack') or
-                        data_dict.get('qty/pack') or
-                        '1'
+                        data_dict.get('Qty/Veh') or '1'
                     ),
-                    
-                    # Secondary dimensions
                     '{Secondary L-mm}': (
-                        data_dict.get('Secondary L-mm') or
-                        data_dict.get('secondary l-mm') or
-                        data_dict.get('Secondary L') or
-                        data_dict.get('secondary l') or
-                        'XXX'
+                        data_dict.get('Secondary L-mm') or 'XXX'
                     ),
                     '{Secondary W-mm}': (
-                        data_dict.get('Secondary W-mm') or
-                        data_dict.get('secondary w-mm') or
-                        data_dict.get('Secondary W') or
-                        data_dict.get('secondary w') or
-                        'XXX'
+                        data_dict.get('Secondary W-mm') or 'XXX'
                     ),
                     '{Secondary H-mm}': (
-                        data_dict.get('Secondary H-mm') or
-                        data_dict.get('secondary h-mm') or
-                        data_dict.get('Secondary H') or
-                        data_dict.get('secondary h') or
-                        'XXX'
+                        data_dict.get('Secondary H-mm') or 'XXX'
                     ),
-                    
-                    # Primary dimensions
                     '{Primary L-mm}': (
-                        data_dict.get('Primary L-mm') or
-                        data_dict.get('primary l-mm') or
-                        data_dict.get('Primary L') or
-                        data_dict.get('primary l') or
-                        'XXX'
+                        data_dict.get('Primary L-mm') or 'XXX'
                     ),
                     '{Primary W-mm}': (
-                        data_dict.get('Primary W-mm') or
-                        data_dict.get('primary w-mm') or
-                        data_dict.get('Primary W') or
-                        data_dict.get('primary w') or
-                        'XXX'
+                        data_dict.get('Primary W-mm') or 'XXX'
                     ),
                     '{Primary H-mm}': (
-                        data_dict.get('Primary H-mm') or
-                        data_dict.get('primary h-mm') or
-                        data_dict.get('Primary H') or
-                        data_dict.get('primary h') or
-                        'XXX'
+                        data_dict.get('Primary H-mm') or 'XXX'
                     )
                 }
+                # --- END: MODIFIED SECTION ---
                 
                 # Debug: Show what replacements are being made
                 for placeholder, raw_value in replacements.items():
@@ -1758,16 +1630,12 @@ class EnhancedTemplateMapperWithImages:
 
     def clean_data_value(self, value):
         """Clean data value, converting whole-number floats to integers."""
-        # Handle NaN or None first
         if pd.isna(value) or value is None:
             return ""
 
-        # Check if the value is a float that represents a whole number
         if isinstance(value, float) and value.is_integer():
-            # If so, convert it to an integer first, then to a string
             return str(int(value))
 
-        # Original logic for all other types (strings, non-whole floats, etc.)
         str_value = str(value).strip()
         
         if str_value.lower() in ['nan', 'none', 'null', 'n/a', '#n/a', '']:
@@ -1783,14 +1651,16 @@ class EnhancedTemplateMapperWithImages:
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
             
+            # --- START: MODIFIED SECTION ---
             # More comprehensive list of critical column variations
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
                 "Outer W": ["outer w", "outer width", "outer w-mm", "secondary w-mm", "secondary w"],
                 "Outer H": ["outer h", "outer height", "outer h-mm", "secondary h-mm", "secondary h"],
-                "Inner L": ["inner l", "inner length", "inner l-mm"],
-                "Inner W": ["inner w", "inner width", "inner w-mm"],
-                "Inner H": ["inner h", "inner height", "inner h-mm"],
+                # This is the FIX: Associate "primary" dimension columns with the canonical "Inner" keys
+                "Inner L": ["inner l", "inner length", "inner l-mm", "primary l-mm", "primary l"],
+                "Inner W": ["inner w", "inner width", "inner w-mm", "primary w-mm", "primary w"],
+                "Inner H": ["inner h", "inner height", "inner h-mm", "primary h-mm", "primary h"],
                 "Primary Qty/Pack": ["primary qty/pack", "primary quantity"],
                 "Primary Packaging Type": ["primary packaging type"],
                 "Secondary Packaging Type": ["secondary packaging type"],
@@ -1798,6 +1668,7 @@ class EnhancedTemplateMapperWithImages:
                 "Level":   ["level", "levels"],
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
             }
+            # --- END: MODIFIED SECTION ---
             
             # Create a reverse map from normalized column name to canonical name
             col_map = {}
@@ -2075,7 +1946,8 @@ class EnhancedTemplateMapperWithImages:
             print(f"💥 Critical error in write_filled_steps_to_template: {e}")
             st.error(f"Critical error writing filled procedure steps: {e}")
             return 0
-# Packaging types and procedures from reference code
+
+# ... (The rest of your code from PACKAGING_TYPES down to if __name__ == "__main__": remains exactly the same)
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
