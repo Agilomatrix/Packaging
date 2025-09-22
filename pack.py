@@ -1374,6 +1374,7 @@ class EnhancedTemplateMapperWithImages:
                 
                 print(f"Processing step {i}: {step[:50]}...")
                 
+                # --- START: MODIFIED SECTION ---
                 # Enhanced mapping with multiple fallback options
                 replacements = {
                     # *** CRITICAL: Enhanced quantity mappings - multiple fallbacks ***
@@ -1495,6 +1496,22 @@ class EnhancedTemplateMapperWithImages:
                         'XXX'
                     ),
                     
+                    # *** NEWLY ADDED ***
+                    # Primary and Secondary Packaging Types
+                    '{Primary Packaging Type}': (
+                        data_dict.get('Primary Packaging Type') or
+                        data_dict.get('primary packaging type') or
+                        # Fallback for templates that just say "Packaging Type" in the primary section
+                        data_dict.get('Packaging Type') or 
+                        data_dict.get('packaging type') or
+                        'N/A'
+                    ),
+                    '{Secondary Packaging Type}': (
+                        data_dict.get('Secondary Packaging Type') or
+                        data_dict.get('secondary packaging type') or
+                        'N/A'
+                    ),
+                    
                     # Primary Qty/Pack - try multiple variations
                     '{Primary Qty/Pack}': (
                         data_dict.get('Primary Qty/Pack') or
@@ -1570,13 +1587,19 @@ class EnhancedTemplateMapperWithImages:
                         'XXX'
                     )
                 }
+                # --- END: MODIFIED SECTION ---
                 
                 # Debug: Show what replacements are being made
                 for placeholder, raw_value in replacements.items():
                     if placeholder in filled_step:
                         clean_value = self.clean_data_value(raw_value)
                         if not clean_value or clean_value == "":
-                            clean_value = 'XXX'
+                            # Use a more appropriate fallback depending on the placeholder
+                            if 'Type' in placeholder:
+                                clean_value = 'N/A'
+                            else:
+                                clean_value = 'XXX'
+
                         print(f"  Replacing {placeholder} with '{clean_value}' (from: {raw_value})")
                         filled_step = filled_step.replace(placeholder, str(clean_value))
                 
@@ -1772,6 +1795,8 @@ class EnhancedTemplateMapperWithImages:
                 "Inner W": ["inner w", "inner width", "inner w-mm"],
                 "Inner H": ["inner h", "inner height", "inner h-mm"],
                 "Primary Qty/Pack": ["primary qty/pack", "primary quantity"],
+                "Primary Packaging Type": ["primary packaging type"], # NEWLY ADDED
+                "Secondary Packaging Type": ["secondary packaging type"], # NEWLY ADDED
                 "Layer":   ["layer", "layers"],
                 "Level":   ["level", "levels"],
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
@@ -1784,7 +1809,7 @@ class EnhancedTemplateMapperWithImages:
                     # Map the preprocessed variant to the clean, canonical name
                     col_map[self.preprocess_text(variant)] = canonical
             # --- END: MODIFIED SECTION ---
-
+            
             template_procedure_steps = self.read_procedure_steps_from_template(template_path)
             if not template_procedure_steps:
                 st.warning("⚠️ No procedure steps found in template. Will use empty steps.")
@@ -1811,7 +1836,6 @@ class EnhancedTemplateMapperWithImages:
                             raw_value = data_df[data_col].iloc[row_idx]
                             data_value = self.clean_data_value(raw_value)
                     
-                            # --- START: MODIFIED SECTION ---
                             # Always store the value under the template's original field name
                             template_field_key = mapping['template_field']
                             data_dict[template_field_key] = data_value
@@ -1824,7 +1848,6 @@ class EnhancedTemplateMapperWithImages:
                                 canonical_key = col_map[normalized_col]
                                 data_dict[canonical_key] = data_value
                                 print(f"DEBUG: Stored '{data_value}' under CANONICAL key: '{canonical_key}'")
-                            # --- END: MODIFIED SECTION ---
 
                             data_col_name = mapping.get('data_column', '').lower()
                             if data_col_name:
@@ -2056,8 +2079,7 @@ class EnhancedTemplateMapperWithImages:
             print(f"💥 Critical error in write_filled_steps_to_template: {e}")
             st.error(f"Critical error writing filled procedure steps: {e}")
             return 0
-
-# ... (The rest of your code from PACKAGING_TYPES down to if __name__ == "__main__": remains exactly the same)
+# Packaging types and procedures from reference code
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
