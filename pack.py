@@ -1363,7 +1363,6 @@ class EnhancedTemplateMapperWithImages:
                 
                 print(f"Processing step {i}: {step[:50]}...")
                 
-                # --- START: MODIFIED SECTION ---
                 replacements = {
                     '{x No. of Parts}': (
                         data_dict.get('x No. of Parts') or '8'
@@ -1375,7 +1374,7 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('Layer') or '4'
                     ),
                     
-                    # This is the FIX: Add fallbacks from the primary/secondary dimensions
+                    # Inner dimensions with robust fallbacks
                     '{Inner L}': (
                         data_dict.get('Inner L') or
                         data_dict.get('Primary L-mm') or
@@ -1431,7 +1430,6 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('Qty/Veh') or '1'
                     )
                 }
-                # --- END: MODIFIED SECTION ---
                 
                 for placeholder, raw_value in replacements.items():
                     if placeholder in filled_step:
@@ -1611,7 +1609,6 @@ class EnhancedTemplateMapperWithImages:
         if pd.isna(value) or value is None or str(value).strip() == '':
             return ""
 
-        # --- THIS IS THE NEW LOGIC ---
         if isinstance(value, (datetime, pd.Timestamp)):
             return value.strftime('%d-%m-%Y')
 
@@ -1632,13 +1629,17 @@ class EnhancedTemplateMapperWithImages:
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
             
-            # This dictionary defines all the critical data points we need for procedures
-            # and maps various possible column names to a single, standard ("canonical") name.
+            # --- START: MODIFIED SECTION ---
+            # Define color fills for remarks
+            green_fill = PatternFill(start_color='FFC6EFCE', end_color='FFC6EFCE', fill_type='solid')
+            red_fill = PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid')
+            yellow_fill = PatternFill(start_color='FFFFEB9C', end_color='FFFFEB9C', fill_type='solid')
+            
+            # This dictionary maps various possible column names to a single, standard ("canonical") name.
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
                 "Outer W": ["outer w", "outer width", "outer w-mm", "secondary w-mm", "secondary w"],
                 "Outer H": ["outer h", "outer height", "outer h-mm", "secondary h-mm", "secondary h"],
-                # This is the FIX: Associate "primary" dimension columns with the canonical "Inner" keys
                 "Inner L": ["inner l", "inner length", "inner l-mm", "primary l-mm", "primary l"],
                 "Inner W": ["inner w", "inner width", "inner w-mm", "primary w-mm", "primary w"],
                 "Inner H": ["inner h", "inner height", "inner h-mm", "primary h-mm", "primary h"],
@@ -1649,8 +1650,8 @@ class EnhancedTemplateMapperWithImages:
                 "Level":   ["level", "levels"],
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
             }
+            # --- END: MODIFIED SECTION ---
             
-            # Create a reverse map from a normalized column name to its standard name
             col_map = {}
             for canonical, variants in critical_cols.items():
                 for variant in variants:
@@ -1671,19 +1672,16 @@ class EnhancedTemplateMapperWithImages:
                 data_dict = {}
                 filename_parts = {}
 
-                # --- START: MODIFIED SECTION (THE FIX) ---
                 # Proactively populate data_dict with all critical procedure data first.
-                # This makes the data available regardless of whether a field was mapped visually.
                 for col_name in data_df.columns:
                     normalized_col = self.preprocess_text(col_name)
                     if normalized_col in col_map:
                         canonical_key = col_map[normalized_col]
                         raw_value = data_df[col_name].iloc[row_idx]
                         data_value = self.clean_data_value(raw_value)
-                        if data_value: # Only store if there's a value
+                        if data_value:
                             data_dict[canonical_key] = data_value
                             print(f"DEBUG (Proactive): Stored '{data_value}' under CANONICAL key: '{canonical_key}' from column '{col_name}'")
-                # --- END: MODIFIED SECTION ---
 
                 template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
                 mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
@@ -1696,10 +1694,8 @@ class EnhancedTemplateMapperWithImages:
                             raw_value = data_df[data_col].iloc[row_idx]
                             data_value = self.clean_data_value(raw_value)
                     
-                            # Store by template field name for visual placement
                             data_dict[mapping['template_field']] = data_value
 
-                            # Store filename components
                             data_col_name = mapping.get('data_column', '').lower()
                             if data_col_name:
                                 if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number']):
@@ -1716,6 +1712,42 @@ class EnhancedTemplateMapperWithImages:
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
                 
+                # --- START: MODIFIED SECTION (THE FIX) ---
+                # After standard mapping, handle the special case for "Problems if any" with color
+                try:
+                    problems_field_info = None
+                    for field in template_fields.values():
+                        if 'problems' in self.preprocess_text(field['value']):
+                            problems_field_info = field
+                            break
+                    
+                    if problems_field_info:
+                        # Find the correct data column names, handling slight variations
+                        problems_col = next((col for col in data_df.columns if 'problems' in col.lower()), None)
+                        remarks_col = next((col for col in data_df.columns if 'remarks' in col.lower()), None)
+
+                        if problems_col and remarks_col:
+                            target_cell_coord = self.find_data_cell_for_label(worksheet, problems_field_info)
+                            if target_cell_coord:
+                                problem_text = self.clean_data_value(data_df[problems_col].iloc[row_idx])
+                                remark_color = self.clean_data_value(data_df[remarks_col].iloc[row_idx]).lower()
+                                
+                                target_cell = worksheet[target_cell_coord]
+                                target_cell.value = problem_text
+                                
+                                # Apply color based on remark
+                                if remark_color == 'red':
+                                    target_cell.fill = red_fill
+                                elif remark_color == 'green':
+                                    target_cell.fill = green_fill
+                                elif remark_color == 'yellow':
+                                    target_cell.fill = yellow_fill
+                                
+                                st.write(f"✅ Applied '{remark_color}' color to '{target_cell_coord}' for 'Problems' field.")
+                except Exception as e:
+                    st.warning(f"Could not process color for 'Problems if any' field: {e}")
+                # --- END: MODIFIED SECTION ---
+
                 steps_written = 0
                 if template_procedure_steps:
                     filled_steps = self.substitute_placeholders_in_steps(template_procedure_steps, data_dict)
