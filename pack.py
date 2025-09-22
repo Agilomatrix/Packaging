@@ -1631,9 +1631,9 @@ class EnhancedTemplateMapperWithImages:
             
             # --- START: MODIFIED SECTION ---
             # Define color fills for remarks
-            green_fill = PatternFill(start_color='FFC6EFCE', end_color='FFC6EFCE', fill_type='solid')
-            red_fill = PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid')
-            yellow_fill = PatternFill(start_color='FFFFEB9C', end_color='FFFFEB9C', fill_type='solid')
+            green_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
+            red_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
+            yellow_fill = PatternFill(start_color='FFEB9C', end_color='FFEB9C', fill_type='solid')
             # --- END: MODIFIED SECTION ---
             
             critical_cols = {
@@ -1687,36 +1687,6 @@ class EnhancedTemplateMapperWithImages:
         
                 mapping_count = 0
                 for coord, mapping in mapping_results.items():
-                    # --- START: MODIFIED SECTION (THE FIX) ---
-                    # Special handling for the "Problems" field to include color
-                    if 'problems' in self.preprocess_text(mapping.get('template_field', '')):
-                        try:
-                            problems_col = next((c for c in data_df.columns if 'problems' in c.lower()), None)
-                            remarks_col = next((c for c in data_df.columns if 'remarks' in c.lower()), None)
-
-                            if problems_col and remarks_col:
-                                target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
-                                if target_cell_coord:
-                                    problem_text = self.clean_data_value(data_df[problems_col].iloc[row_idx])
-                                    remark_color = self.clean_data_value(data_df[remarks_col].iloc[row_idx]).lower()
-                                    
-                                    target_cell = worksheet[target_cell_coord]
-                                    target_cell.value = problem_text
-                                    
-                                    if remark_color == 'red':
-                                        target_cell.fill = red_fill
-                                    elif remark_color == 'green':
-                                        target_cell.fill = green_fill
-                                    elif remark_color == 'yellow':
-                                        target_cell.fill = yellow_fill
-                                    
-                                    st.write(f"✅ Applied '{remark_color}' color to '{target_cell_coord}' for 'Problems' field.")
-                                    mapping_count += 1
-                                    continue # Skip normal processing for this field
-                        except Exception as e:
-                            st.warning(f"Could not process color for 'Problems' field: {e}")
-                    # --- END: MODIFIED SECTION ---
-
                     if mapping['is_mappable'] and mapping['data_column']:
                         try:
                             data_col = mapping['data_column']
@@ -1740,6 +1710,42 @@ class EnhancedTemplateMapperWithImages:
                                 mapping_count += 1
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
+                
+                # --- START: MODIFIED SECTION (THE FIX) ---
+                # After standard mapping, handle the special case for "Problems if any" with color
+                try:
+                    problems_field_info = None
+                    for field in template_fields.values():
+                        if 'problems' in self.preprocess_text(field.get('value', '')):
+                            problems_field_info = field
+                            break
+                    
+                    if problems_field_info:
+                        problems_col = next((col for col in data_df.columns if 'problems' in col.lower()), None)
+                        remarks_col = next((col for col in data_df.columns if 'remarks' in col.lower()), None)
+
+                        if problems_col and remarks_col:
+                            target_cell_coord = self.find_data_cell_for_label(worksheet, problems_field_info)
+                            if target_cell_coord:
+                                problem_text = self.clean_data_value(data_df[problems_col].iloc[row_idx])
+                                remark_color = self.clean_data_value(data_df[remarks_col].iloc[row_idx]).lower()
+                                
+                                target_cell = worksheet[target_cell_coord]
+                                # This ensures the text is set, even if it was missed in the main loop
+                                target_cell.value = problem_text
+                                
+                                # Apply color based on remark
+                                if remark_color == 'red':
+                                    target_cell.fill = red_fill
+                                elif remark_color == 'green':
+                                    target_cell.fill = green_fill
+                                elif remark_color == 'yellow':
+                                    target_cell.fill = yellow_fill
+                                
+                                st.write(f"✅ Applied '{remark_color}' color to '{target_cell_coord}' for 'Problems' field.")
+                except Exception as e:
+                    st.warning(f"Could not process color for 'Problems if any' field: {e}")
+                # --- END: MODIFIED SECTION ---
                 
                 steps_written = 0
                 if template_procedure_steps:
