@@ -1463,7 +1463,7 @@ class EnhancedTemplateMapperWithImages:
                         '1'
                     ),
                     
-                    # Outer dimensions - try multiple variations [MODIFIED]
+                    # Outer dimensions - try multiple variations
                     '{Outer L}': (
                         data_dict.get('Outer L') or 
                         data_dict.get('outer l') or
@@ -1471,8 +1471,7 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('OUTER L') or
                         data_dict.get('Outer Length') or
                         data_dict.get('outer length') or
-                        data_dict.get('Secondary L-mm') or # Fallback to secondary dimension
-                        data_dict.get('secondary l-mm') or
+                        data_dict.get('Secondary L-mm') or
                         'XXX'
                     ),
                     '{Outer W}': (
@@ -1482,8 +1481,7 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('OUTER W') or
                         data_dict.get('Outer Width') or
                         data_dict.get('outer width') or
-                        data_dict.get('Secondary W-mm') or # Fallback to secondary dimension
-                        data_dict.get('secondary w-mm') or
+                        data_dict.get('Secondary W-mm') or
                         'XXX'
                     ),
                     '{Outer H}': (
@@ -1493,25 +1491,8 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('OUTER H') or
                         data_dict.get('Outer Height') or
                         data_dict.get('outer height') or
-                        data_dict.get('Secondary H-mm') or # Fallback to secondary dimension
-                        data_dict.get('secondary h-mm') or
+                        data_dict.get('Secondary H-mm') or
                         'XXX'
-                    ),
-
-                    # [NEW] Add Primary and Secondary Packaging Types
-                    '{Primary Packaging Type}': (
-                        data_dict.get('Primary Packaging Type') or
-                        data_dict.get('primary packaging type') or
-                        data_dict.get('Packaging Type') or # General fallback
-                        data_dict.get('packaging type') or
-                        'N/A' 
-                    ),
-                    '{Secondary Packaging Type}': (
-                        data_dict.get('Secondary Packaging Type') or
-                        data_dict.get('secondary packaging type') or
-                        data_dict.get('Packaging Type') or # General fallback
-                        data_dict.get('packaging type') or
-                        'N/A'
                     ),
                     
                     # Primary Qty/Pack - try multiple variations
@@ -1595,9 +1576,7 @@ class EnhancedTemplateMapperWithImages:
                     if placeholder in filled_step:
                         clean_value = self.clean_data_value(raw_value)
                         if not clean_value or clean_value == "":
-                            clean_value = 'XXX' # Keep fallback for dimensions
-                            if 'Type' in placeholder:
-                                clean_value = 'N/A' # Use N/A for types
+                            clean_value = 'XXX'
                         print(f"  Replacing {placeholder} with '{clean_value}' (from: {raw_value})")
                         filled_step = filled_step.replace(placeholder, str(clean_value))
                 
@@ -1783,95 +1762,79 @@ class EnhancedTemplateMapperWithImages:
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
             
-            COLOR_MAP = {
-                'green': PatternFill(start_color='FFC6EFCE', end_color='FFC6EFCE', fill_type='solid'),
-                'red':   PatternFill(start_color='FFFFC7CE', end_color='FFFFC7CE', fill_type='solid'),
-                'blue':  PatternFill(start_color='FFD9E1F2', end_color='FFD9E1F2', fill_type='solid')
-            }
-            
-            # Force direct capture of critical procedure columns if present in Excel
+            # --- START: MODIFIED SECTION ---
+            # More comprehensive list of critical column variations
             critical_cols = {
-                "Outer L": ["outer l", "outer length", "outer l-mm"],
-                "Outer W": ["outer w", "outer width", "outer w-mm"],
-                "Outer H": ["outer h", "outer height", "outer h-mm"],
+                "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
+                "Outer W": ["outer w", "outer width", "outer w-mm", "secondary w-mm", "secondary w"],
+                "Outer H": ["outer h", "outer height", "outer h-mm", "secondary h-mm", "secondary h"],
                 "Inner L": ["inner l", "inner length", "inner l-mm"],
                 "Inner W": ["inner w", "inner width", "inner w-mm"],
                 "Inner H": ["inner h", "inner height", "inner h-mm"],
-                "Primary Qty/Pack": ["Primary qty/pack", "primary qty/pack", "PRIMARY QTY/PACK"],
+                "Primary Qty/Pack": ["primary qty/pack", "primary quantity"],
                 "Layer":   ["layer", "layers"],
                 "Level":   ["level", "levels"],
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
             }
             
+            # Create a reverse map from normalized column name to canonical name
             col_map = {}
             for canonical, variants in critical_cols.items():
-                for col in data_df.columns:
-                    col_norm = self.preprocess_text(col)
-                    if any(col_norm == self.preprocess_text(v) for v in variants):
-                        col_map[col_norm] = canonical
-                        print(f"DEBUG: Matched column '{col}' ({col_norm}) -> '{canonical}'")
-                        break
-            
-            # *** NEW: Read procedure steps from template ONCE ***
+                for variant in variants:
+                    # Map the preprocessed variant to the clean, canonical name
+                    col_map[self.preprocess_text(variant)] = canonical
+            # --- END: MODIFIED SECTION ---
+
             template_procedure_steps = self.read_procedure_steps_from_template(template_path)
             if not template_procedure_steps:
                 st.warning("⚠️ No procedure steps found in template. Will use empty steps.")
             
-            # Store all row data for multi-template generation
             st.session_state.all_row_data = []
     
-            # Process each row
             for row_idx in range(len(data_df)):
                 st.write(f"🔄 Processing row {row_idx + 1}/{len(data_df)}")
                 
-                # Load fresh template for each row
                 workbook = openpyxl.load_workbook(template_path)
                 worksheet = workbook.active
         
-                # Find template fields with section context
                 template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
-        
-                # Map data with section context for current row
                 mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
         
-                # Apply mappings to template
                 mapping_count = 0
-                data_dict = {}  # Store mapped data for procedure generation
-                filename_parts = {}  # Store parts for filename
+                data_dict = {}
+                filename_parts = {}
         
                 for coord, mapping in mapping_results.items():
                     if mapping['is_mappable'] and mapping['data_column']:
                         try:
                             data_col = mapping['data_column']
-                            raw_value = data_df[data_col].iloc[row_idx]  # Use current row
+                            raw_value = data_df[data_col].iloc[row_idx]
                             data_value = self.clean_data_value(raw_value)
                     
-                            # Store in data_dict for procedure generation
-                            data_dict[mapping['template_field']] = data_value
+                            # --- START: MODIFIED SECTION ---
+                            # Always store the value under the template's original field name
+                            template_field_key = mapping['template_field']
+                            data_dict[template_field_key] = data_value
+                            print(f"DEBUG: Stored '{data_value}' under template key: '{template_field_key}'")
 
-                            # Force map critical fields if the column matches
+                            # Additionally, check if the DATA COLUMN is a critical one.
+                            # If so, also store it under its canonical name for guaranteed access.
                             normalized_col = self.preprocess_text(data_col)
                             if normalized_col in col_map:
-                                data_dict[col_map[normalized_col]] = data_value
-                    
-                            # Store filename components
-                             # Store filename components by checking the mapped DATA COLUMN name, which is more reliable.
+                                canonical_key = col_map[normalized_col]
+                                data_dict[canonical_key] = data_value
+                                print(f"DEBUG: Stored '{data_value}' under CANONICAL key: '{canonical_key}'")
+                            # --- END: MODIFIED SECTION ---
+
                             data_col_name = mapping.get('data_column', '').lower()
                             if data_col_name:
-                                # Part Number Check (check if not already found)
                                 if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number', 'part_number', 'part #']):
                                     filename_parts['part_no'] = data_value
-                                
-                                # Description Check (check if not already found)
                                 if 'description' not in filename_parts and any(term in data_col_name for term in ['description', 'desc', 'part desc']):
                                     filename_parts['description'] = data_value
-
-                                # Vendor Code Check (check if not already found)
                                 if 'vendor_code' not in filename_parts and any(term in data_col_name for term in ['vendor code', 'vendor_code', 'supplier code']):
                                     filename_parts['vendor_code'] = data_value
-                            # --- END: ROBUST FILENAME COMPONENT LOGIC ---
                     
-                            # Find target cell and write data
                             target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
                     
                             if target_cell_coord and data_value:
@@ -1881,34 +1844,26 @@ class EnhancedTemplateMapperWithImages:
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
                 
-                # *** NEW: Process procedure steps from template instead of hardcoded ***
                 steps_written = 0
                 if template_procedure_steps:
-                    # Substitute placeholders with actual data
                     filled_steps = self.substitute_placeholders_in_steps(template_procedure_steps, data_dict)
-                    
-                    # Write the filled steps back to template
                     steps_written = self.write_filled_steps_to_template(worksheet, filled_steps)
                 else:
                     st.write("⚠️ No procedure steps to process for this row")
                 
-                # Generate filename
                 vendor_code = filename_parts.get('vendor_code', 'NoVendor')
                 part_no = filename_parts.get('part_no', 'NoPart')
                 description = filename_parts.get('description', 'NoDesc')
         
-                # Clean filename parts
                 vendor_code = re.sub(r'[^\w\-_]', '', str(vendor_code))[:10]
                 part_no = re.sub(r'[^\w\-_]', '', str(part_no))[:15]
                 description = re.sub(r'[^\w\-_]', '', str(description))[:20]
         
                 filename = f"{vendor_code}_{part_no}_{description}.xlsx"
         
-                # Save workbook to temporary file
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
                     workbook.save(tmp_file.name)
             
-                    # Store row data
                     row_data = {
                         'row_index': row_idx,
                         'filename': filename,
@@ -2102,7 +2057,7 @@ class EnhancedTemplateMapperWithImages:
             st.error(f"Critical error writing filled procedure steps: {e}")
             return 0
 
-# Packaging types and procedures from reference code
+# ... (The rest of your code from PACKAGING_TYPES down to if __name__ == "__main__": remains exactly the same)
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
