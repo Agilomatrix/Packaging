@@ -1008,31 +1008,41 @@ class EnhancedTemplateMapperWithImages:
             st.error(f"Error in preprocess_text: {e}")
             return ""
 
+    # --- START: MODIFIED SECTION ---
     def is_mappable_field(self, text):
-        """Enhanced field detection for packaging templates"""
+        """Enhanced field detection with specific exclusions to prevent false positives."""
         try:
             if not text or pd.isna(text):
                 return False
-            text = str(text).lower().strip()
-            if not text:
+            
+            text_lower = str(text).lower().strip()
+            if not text_lower:
                 return False
-            print(f"DEBUG is_mappable_field: Checking '{text}'")
-
-            # Skip header-like patterns that should not be treated as fields
-            header_exclusions = [
-                'vendor information', 'part information', 'primary packaging', 'secondary packaging',
-                'packaging instruction', 'procedure', 'steps', 'process'
+            
+            # --- THIS IS THE FIX ---
+            # Exclude administrative fields that are not meant for data entry.
+            # This prevents "Reviewed by" from being incorrectly identified as a mappable field.
+            exclusion_patterns = [
+                'vendor information', 'part information', 'primary packaging', 
+                'secondary packaging', 'packaging instruction', 'procedure', 'steps', 
+                'process', 'issued by', 'reviewed by', 'approved by', 'name & sign',
+                'reference image/pictures'
             ]
-            for exclusion in header_exclusions:
-                if exclusion in text and 'type' not in text:
-                    print(f"DEBUG: Excluding '{text}' as header")
+            
+            # If the text matches any exclusion, it's NOT a mappable field.
+            for exclusion in exclusion_patterns:
+                if exclusion in text_lower:
+                    # Allow "packaging type" as it's a valid field
+                    if 'type' in text_lower and 'packaging' in text_lower:
+                        continue
+                    print(f"DEBUG: Excluding '{text}' as it matches exclusion '{exclusion}'")
                     return False
         
-            # Define mappable field patterns for packaging templates
+            # Define valid, specific patterns for mappable fields
             mappable_patterns = [
                 r'packaging\s+type', r'\btype\b',
                 r'\bl[-\s]*mm\b', r'\bw[-\s]*mm\b', r'\bh[-\s]*mm\b',
-                r'\bl\b', r'\bw\b', r'\bh\b',
+                r'\b(l|w|h)\b',  # More specific: matches standalone L, W, or H
                 r'part\s+l\b', r'part\s+w\b', r'part\s+h\b',
                 r'\blength\b', r'\bwidth\b', r'\bheight\b',
                 r'qty[/\s]*pack', r'quantity\b', r'weight\b', r'empty\s+weight',
@@ -1041,44 +1051,31 @@ class EnhancedTemplateMapperWithImages:
                 r'\bdate\b',
                 r'\brev(ision)?\s*no\.?\b',
                 # Procedure-specific patterns
-                r'\bx\s*no\.?\s*of\s*parts\b',
-                r'\bx\s*no\s*of\s*parts\b',
-                r'\bx\s*number\s*of\s*parts\b',
-                r'\bno\.?\s*of\s*parts\b',
-                r'\bnumber\s*of\s*parts\b',
-                r'\bparts\s*per\s*pack\b',
-                r'\bparts\s*quantity\b',
-                r'\bqty\s*of\s*parts\b',
-                r'\blevel\b', r'\blevels\b',
-                r'\blayer\b', r'\blayers\b',
-                r'\bmax\s*level\b', r'\bmaximum\s*level\b',
-                r'\bmax\s*layer\b', r'\bmaximum\s*layer\b',
-                r'\bstacking\s*level\b', r'\bpallet\s*level\b',
-                r'\binner\s*l\b', r'\binner\s*length\b',
-                r'\binner\s*w\b', r'\binner\s*width\b', 
-                r'\binner\s*h\b', r'\binner\s*height\b',
-                r'\binner\s*qty[/\s]*pack\b',
-                r'\bouter\s*l\b', r'\bouter\s*length\b',
-                r'\bouter\s*w\b', r'\bouter\s*width\b',
-                r'\bouter\s*h\b', r'\bouter\s*height\b',
-                r'\bpallet\b', r'\bpalletiz\w*\b',
-                r'\bproblems\b' 
+                r'\bx\s*no\.?\s*of\s*parts\b', r'no\.?\s*of\s*parts\b',
+                r'\blevel\b', r'\blevels\b', r'\blayer\b', r'\blayers\b',
+                r'\binner\s*l\b', r'\binner\s*w\b', r'\binner\s*h\b',
+                r'\bouter\s*l\b', r'\bouter\s*w\b', r'\bouter\s*h\b',
+                r'\bpallet\b', r'\bproblems\b' 
             ]
         
+            # Check against the valid patterns
             for pattern in mappable_patterns:
-                if re.search(pattern, text):
+                if re.search(pattern, text_lower):
                     print(f"DEBUG: '{text}' matches pattern '{pattern}'")
                     return True
         
-            if text.endswith(':'):
+            # Fallback for labels ending in a colon
+            if text_lower.endswith(':'):
                 print(f"DEBUG: '{text}' ends with colon")
                 return True
         
-            print(f"DEBUG: '{text}' is NOT mappable")
+            print(f"DEBUG: '{text}' is NOT a mappable field")
             return False
+            
         except Exception as e:
             st.error(f"Error in is_mappable_field: {e}")
             return False
+    # --- END: MODIFIED SECTION ---
 
     def identify_section_context(self, worksheet, row, col, max_search_rows=15):
         """Enhanced section identification with better pattern matching"""
@@ -1494,7 +1491,7 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('Secondary H-mm') or
                         'XXX'
                     ),
-
+                    
                     # Primary and Secondary Packaging Types
                     '{Primary Packaging Type}': (
                         data_dict.get('Primary Packaging Type') or
@@ -1759,7 +1756,6 @@ class EnhancedTemplateMapperWithImages:
             st.error(f"Error in map_data_with_section_context: {e}")
         return mapping_results
 
-    # --- START: MODIFIED SECTION ---
     def clean_data_value(self, value):
         """Clean data value, converting whole-number floats to integers."""
         # Handle NaN or None first
@@ -1778,7 +1774,6 @@ class EnhancedTemplateMapperWithImages:
             return ""
             
         return str_value
-    # --- END: MODIFIED SECTION ---
 
     def map_template_with_data(self, template_path, data_path):
         """Enhanced mapping with section-based approach and multiple row processing"""
@@ -2080,8 +2075,7 @@ class EnhancedTemplateMapperWithImages:
             print(f"💥 Critical error in write_filled_steps_to_template: {e}")
             st.error(f"Critical error writing filled procedure steps: {e}")
             return 0
-
-# ... (The rest of your code from PACKAGING_TYPES down to if __name__ == "__main__": remains exactly the same)
+# Packaging types and procedures from reference code
 PACKAGING_TYPES = [
     {
         "name": "BOX IN BOX SENSITIVE",
