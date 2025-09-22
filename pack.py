@@ -1624,19 +1624,18 @@ class EnhancedTemplateMapperWithImages:
             return ""
             
         return str_value
-
-   def map_template_with_data(self, template_path, data_path):
-       """Enhanced mapping with section-based approach, multiple row processing, and color filling."""
-       try:
-           data_df = pd.read_excel(data_path)
-           data_df = data_df.fillna("")
-           st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
-           # Define your color mappings
-           color_map = {
-               'yellow': 'FFFFFF00',
-               'red': 'FFFF0000',
-               'green': 'FF00FF00'
-           }
+    def map_template_with_data(self, template_path, data_path):
+        """Enhanced mapping with section-based approach, multiple row processing, and color filling."""
+        try:
+            data_df = pd.read_excel(data_path)
+            data_df = data_df.fillna("")
+            st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
+            # Define your color mappings
+            color_map = {
+                'yellow': 'FFFFFF00',
+                'red': 'FFFF0000',
+                'green': 'FF00FF00'
+            }
 
             
             # This dictionary defines all the critical data points we need for procedures
