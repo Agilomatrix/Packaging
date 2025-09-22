@@ -1463,7 +1463,7 @@ class EnhancedTemplateMapperWithImages:
                         '1'
                     ),
                     
-                    # Outer dimensions - try multiple variations
+                    # Outer dimensions - try multiple variations [MODIFIED]
                     '{Outer L}': (
                         data_dict.get('Outer L') or 
                         data_dict.get('outer l') or
@@ -1471,6 +1471,8 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('OUTER L') or
                         data_dict.get('Outer Length') or
                         data_dict.get('outer length') or
+                        data_dict.get('Secondary L-mm') or # Fallback to secondary dimension
+                        data_dict.get('secondary l-mm') or
                         'XXX'
                     ),
                     '{Outer W}': (
@@ -1480,6 +1482,8 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('OUTER W') or
                         data_dict.get('Outer Width') or
                         data_dict.get('outer width') or
+                        data_dict.get('Secondary W-mm') or # Fallback to secondary dimension
+                        data_dict.get('secondary w-mm') or
                         'XXX'
                     ),
                     '{Outer H}': (
@@ -1489,7 +1493,25 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('OUTER H') or
                         data_dict.get('Outer Height') or
                         data_dict.get('outer height') or
+                        data_dict.get('Secondary H-mm') or # Fallback to secondary dimension
+                        data_dict.get('secondary h-mm') or
                         'XXX'
+                    ),
+
+                    # [NEW] Add Primary and Secondary Packaging Types
+                    '{Primary Packaging Type}': (
+                        data_dict.get('Primary Packaging Type') or
+                        data_dict.get('primary packaging type') or
+                        data_dict.get('Packaging Type') or # General fallback
+                        data_dict.get('packaging type') or
+                        'N/A' 
+                    ),
+                    '{Secondary Packaging Type}': (
+                        data_dict.get('Secondary Packaging Type') or
+                        data_dict.get('secondary packaging type') or
+                        data_dict.get('Packaging Type') or # General fallback
+                        data_dict.get('packaging type') or
+                        'N/A'
                     ),
                     
                     # Primary Qty/Pack - try multiple variations
@@ -1573,7 +1595,9 @@ class EnhancedTemplateMapperWithImages:
                     if placeholder in filled_step:
                         clean_value = self.clean_data_value(raw_value)
                         if not clean_value or clean_value == "":
-                            clean_value = 'XXX'
+                            clean_value = 'XXX' # Keep fallback for dimensions
+                            if 'Type' in placeholder:
+                                clean_value = 'N/A' # Use N/A for types
                         print(f"  Replacing {placeholder} with '{clean_value}' (from: {raw_value})")
                         filled_step = filled_step.replace(placeholder, str(clean_value))
                 
