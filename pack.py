@@ -1624,19 +1624,13 @@ class EnhancedTemplateMapperWithImages:
             return ""
             
         return str_value
+
     def map_template_with_data(self, template_path, data_path):
-        """Enhanced mapping with section-based approach, multiple row processing, and color filling."""
+        """Enhanced mapping with section-based approach and multiple row processing"""
         try:
             data_df = pd.read_excel(data_path)
             data_df = data_df.fillna("")
             st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
-            # Define your color mappings
-            color_map = {
-                'yellow': 'FFFFFF00',
-                'red': 'FFFF0000',
-                'green': 'FF00FF00'
-            }
-
             
             # This dictionary defines all the critical data points we need for procedures
             # and maps various possible column names to a single, standard ("canonical") name.
@@ -1670,11 +1664,30 @@ class EnhancedTemplateMapperWithImages:
     
             for row_idx in range(len(data_df)):
                 st.write(f"🔄 Processing row {row_idx + 1}/{len(data_df)}")
+                
                 workbook = openpyxl.load_workbook(template_path)
                 worksheet = workbook.active
-            
-                # ... (rest of the row processing logic remains the same until you write the data)
+                
+                data_dict = {}
+                filename_parts = {}
 
+                # --- START: MODIFIED SECTION (THE FIX) ---
+                # Proactively populate data_dict with all critical procedure data first.
+                # This makes the data available regardless of whether a field was mapped visually.
+                for col_name in data_df.columns:
+                    normalized_col = self.preprocess_text(col_name)
+                    if normalized_col in col_map:
+                        canonical_key = col_map[normalized_col]
+                        raw_value = data_df[col_name].iloc[row_idx]
+                        data_value = self.clean_data_value(raw_value)
+                        if data_value: # Only store if there's a value
+                            data_dict[canonical_key] = data_value
+                            print(f"DEBUG (Proactive): Stored '{data_value}' under CANONICAL key: '{canonical_key}' from column '{col_name}'")
+                # --- END: MODIFIED SECTION ---
+
+                template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
+                mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
+        
                 mapping_count = 0
                 for coord, mapping in mapping_results.items():
                     if mapping['is_mappable'] and mapping['data_column']:
@@ -1682,23 +1695,27 @@ class EnhancedTemplateMapperWithImages:
                             data_col = mapping['data_column']
                             raw_value = data_df[data_col].iloc[row_idx]
                             data_value = self.clean_data_value(raw_value)
-                
-                            # ... (rest of the data writing logic)
-                
+                    
+                            # Store by template field name for visual placement
+                            data_dict[mapping['template_field']] = data_value
+
+                            # Store filename components
+                            data_col_name = mapping.get('data_column', '').lower()
+                            if data_col_name:
+                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number']):
+                                    filename_parts['part_no'] = data_value
+                                if 'description' not in filename_parts and 'description' in data_col_name:
+                                    filename_parts['description'] = data_value
+                                if 'vendor_code' not in filename_parts and 'vendor code' in data_col_name:
+                                    filename_parts['vendor_code'] = data_value
+                    
                             target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
                             if target_cell_coord and data_value:
                                 worksheet[target_cell_coord].value = data_value
                                 mapping_count += 1
-
-                                # New logic to handle cell coloring
-                                if 'problems' in self.preprocess_text(mapping.get('template_field', '')):
-                                    remarks_col_val = data_df.loc[row_idx, 'Remarks'].lower()
-                                    if remarks_col_val in color_map:
-                                        color_hex = color_map[remarks_col_val]
-                                        fill = PatternFill(start_color=color_hex, end_color=color_hex, fill_type="solid")
-                                        worksheet[target_cell_coord].fill = fill
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
+                
                 steps_written = 0
                 if template_procedure_steps:
                     filled_steps = self.substitute_placeholders_in_steps(template_procedure_steps, data_dict)
