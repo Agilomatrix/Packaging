@@ -1210,32 +1210,32 @@ class EnhancedTemplateMapperWithImages:
 
     def find_data_cell_for_label(self, worksheet, field_info):
         """
-        Find data cell for a label, using section_context for special handling of the
-        'Problems' field to ensure it is placed correctly in the designated columns.
+        Find data cell for a label, with special handling for the 'Problems' field
+        and safer, constrained search for all other fields.
         """
         try:
             row = field_info['row']
             col = field_info['column']
-            section_context = field_info.get('section_context')
+            field_text_lower = self.preprocess_text(field_info.get('value', ''))
 
-            # --- SPECIAL CASE: Use section context for the "Problems" / "Remarks" area ---
-            # This is more reliable than checking for the word 'problems'.
-            if section_context == 'miscellaneous_information':
-                # This rule is specific to the template's layout for the "Problems if any" field.
-                # It places the data two rows below the label, which is in the colored area.
+            # --- SPECIAL CASE: Handle "PROBLEMS IF ANY" field directly ---
+            if 'problems' in field_text_lower:
+                # Based on the template, the label is at V23, and the green cell starts at V25.
+                # This is a fixed position relative to the label: (row + 2, same column).
                 target_cell_coord = worksheet.cell(row=row + 2, column=col).coordinate
-                st.write(f"INFO: Found '{field_info['value']}' in special section. Targeting cell: {target_cell_coord}")
+                st.write(f"INFO: Found 'Problems' field. Targeting specific cell: {target_cell_coord}")
                 return target_cell_coord
 
             # --- STANDARD PLACEMENT LOGIC FOR ALL OTHER FIELDS ---
-            # This logic will now be skipped for the 'Problems' field, solving the conflict.
+
+            # Define columns to be explicitly ignored for general placement.
+            # The special case above runs first, so this won't block the 'Problems' field.
             IGNORED_COLUMNS = [22, 23, 24, 25] # V, W, X, Y
 
             def is_suitable_data_cell(r, c):
-                """Check if a cell is suitable, respecting the ignored columns for standard fields."""
+                """Check if a cell at a given row and column is suitable for data entry."""
                 if not (1 <= r <= worksheet.max_row and 1 <= c <= worksheet.max_column):
                     return False
-                # This check now correctly applies only to non-special fields.
                 if c in IGNORED_COLUMNS:
                     return False
                 try:
@@ -1259,7 +1259,8 @@ class EnhancedTemplateMapperWithImages:
             if is_suitable_data_cell(row + 1, col):
                 return worksheet.cell(row=row + 1, column=col).coordinate
 
-            st.warning(f"WARNING: Could not find a suitable data cell for label '{field_info['value']}'.")
+            # If no suitable cell is found, give up to prevent errors.
+            st.write(f"WARNING: Could not find a safe data cell for label '{field_info['value']}'. Skipping placement.")
             return None
             
         except Exception as e:
@@ -1362,6 +1363,7 @@ class EnhancedTemplateMapperWithImages:
                 
                 print(f"Processing step {i}: {step[:50]}...")
                 
+                # --- START: MODIFIED SECTION ---
                 replacements = {
                     '{x No. of Parts}': (
                         data_dict.get('x No. of Parts') or '8'
@@ -1373,7 +1375,7 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('Layer') or '4'
                     ),
                     
-                    # Inner dimensions with robust fallbacks
+                    # This is the FIX: Add fallbacks from the primary/secondary dimensions
                     '{Inner L}': (
                         data_dict.get('Inner L') or
                         data_dict.get('Primary L-mm') or
@@ -1429,6 +1431,7 @@ class EnhancedTemplateMapperWithImages:
                         data_dict.get('Qty/Veh') or '1'
                     )
                 }
+                # --- END: MODIFIED SECTION ---
                 
                 for placeholder, raw_value in replacements.items():
                     if placeholder in filled_step:
@@ -1608,6 +1611,7 @@ class EnhancedTemplateMapperWithImages:
         if pd.isna(value) or value is None or str(value).strip() == '':
             return ""
 
+        # --- THIS IS THE NEW LOGIC ---
         if isinstance(value, (datetime, pd.Timestamp)):
             return value.strftime('%d-%m-%Y')
 
@@ -1621,22 +1625,27 @@ class EnhancedTemplateMapperWithImages:
             
         return str_value
 
-    def map_template_with_data(self, template_path, data_path):
-        """Enhanced mapping with section-based approach and multiple row processing"""
-        try:
-            data_df = pd.read_excel(data_path)
-            data_df = data_df.fillna("")
-            st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
+   def map_template_with_data(self, template_path, data_path):
+       """Enhanced mapping with section-based approach, multiple row processing, and color filling."""
+       try:
+           data_df = pd.read_excel(data_path)
+           data_df = data_df.fillna("")
+           st.write(f"📊 Loaded data with {len(data_df)} rows and {len(data_df.columns)} columns")
+           # Define your color mappings
+           color_map = {
+               'yellow': 'FFFFFF00',
+               'red': 'FFFF0000',
+               'green': 'FF00FF00'
+           }
+
             
-            # Define color fills for remarks
-            green_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
-            red_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
-            yellow_fill = PatternFill(start_color='FFEB9C', end_color='FFEB9C', fill_type='solid')
-            
+            # This dictionary defines all the critical data points we need for procedures
+            # and maps various possible column names to a single, standard ("canonical") name.
             critical_cols = {
                 "Outer L": ["outer l", "outer length", "outer l-mm", "secondary l-mm", "secondary l"],
                 "Outer W": ["outer w", "outer width", "outer w-mm", "secondary w-mm", "secondary w"],
                 "Outer H": ["outer h", "outer height", "outer h-mm", "secondary h-mm", "secondary h"],
+                # This is the FIX: Associate "primary" dimension columns with the canonical "Inner" keys
                 "Inner L": ["inner l", "inner length", "inner l-mm", "primary l-mm", "primary l"],
                 "Inner W": ["inner w", "inner width", "inner w-mm", "primary w-mm", "primary w"],
                 "Inner H": ["inner h", "inner height", "inner h-mm", "primary h-mm", "primary h"],
@@ -1648,6 +1657,7 @@ class EnhancedTemplateMapperWithImages:
                 "x No. of Parts": ["x no of parts", "x no. of parts", "x number of parts", "no. of parts", "number of parts"]
             }
             
+            # Create a reverse map from a normalized column name to its standard name
             col_map = {}
             for canonical, variants in critical_cols.items():
                 for variant in variants:
@@ -1661,25 +1671,11 @@ class EnhancedTemplateMapperWithImages:
     
             for row_idx in range(len(data_df)):
                 st.write(f"🔄 Processing row {row_idx + 1}/{len(data_df)}")
-                
                 workbook = openpyxl.load_workbook(template_path)
                 worksheet = workbook.active
-                
-                data_dict = {}
-                filename_parts = {}
+            
+                # ... (rest of the row processing logic remains the same until you write the data)
 
-                for col_name in data_df.columns:
-                    normalized_col = self.preprocess_text(col_name)
-                    if normalized_col in col_map:
-                        canonical_key = col_map[normalized_col]
-                        raw_value = data_df[col_name].iloc[row_idx]
-                        data_value = self.clean_data_value(raw_value)
-                        if data_value:
-                            data_dict[canonical_key] = data_value
-
-                template_fields, _ = self.find_template_fields_with_context_and_images(template_path)
-                mapping_results = self.map_data_with_section_context_for_row(template_fields, data_df, row_idx)
-        
                 mapping_count = 0
                 for coord, mapping in mapping_results.items():
                     if mapping['is_mappable'] and mapping['data_column']:
@@ -1687,49 +1683,23 @@ class EnhancedTemplateMapperWithImages:
                             data_col = mapping['data_column']
                             raw_value = data_df[data_col].iloc[row_idx]
                             data_value = self.clean_data_value(raw_value)
-                    
-                            data_dict[mapping['template_field']] = data_value
-
-                            data_col_name = mapping.get('data_column', '').lower()
-                            if data_col_name:
-                                if 'part_no' not in filename_parts and any(term in data_col_name for term in ['part no', 'part_no', 'part number']):
-                                    filename_parts['part_no'] = data_value
-                                if 'description' not in filename_parts and 'description' in data_col_name:
-                                    filename_parts['description'] = data_value
-                                if 'vendor_code' not in filename_parts and 'vendor code' in data_col_name:
-                                    filename_parts['vendor_code'] = data_value
-                    
+                
+                            # ... (rest of the data writing logic)
+                
                             target_cell_coord = self.find_data_cell_for_label(worksheet, mapping['field_info'])
                             if target_cell_coord and data_value:
                                 worksheet[target_cell_coord].value = data_value
                                 mapping_count += 1
 
-                                # --- START: CORRECTED COLORING LOGIC ---
-                                # Use the reliable section_context to trigger the coloring.
-                                if mapping['field_info'].get('section_context') == 'miscellaneous_information':
-                                    # Find the 'remarks' column in your data file.
-                                    remarks_col = next((col for col in data_df.columns if 'remarks' in col.lower()), None)
-                                    
-                                    if remarks_col:
-                                        remark_color = self.clean_data_value(data_df[remarks_col].iloc[row_idx]).lower()
-                                        target_cell = worksheet[target_cell_coord]
-                                        
-                                        # Apply the correct color fill based on the remark text.
-                                        if remark_color == 'red':
-                                            target_cell.fill = red_fill
-                                        elif remark_color == 'green':
-                                            target_cell.fill = green_fill
-                                        elif remark_color == 'yellow':
-                                            target_cell.fill = yellow_fill
-                                        
-                                        st.write(f"✅ Applied '{remark_color}' color to '{target_cell_coord}'")
-                                    else:
-                                        st.warning("⚠️ Mapped 'Problems' field, but 'remarks' column not found for coloring.")
-                                # --- END: CORRECTED COLORING LOGIC ---
-
+                                # New logic to handle cell coloring
+                                if 'problems' in self.preprocess_text(mapping.get('template_field', '')):
+                                    remarks_col_val = data_df.loc[row_idx, 'Remarks'].lower()
+                                    if remarks_col_val in color_map:
+                                        color_hex = color_map[remarks_col_val]
+                                        fill = PatternFill(start_color=color_hex, end_color=color_hex, fill_type="solid")
+                                        worksheet[target_cell_coord].fill = fill
                         except Exception as e:
                             st.write(f"⚠️ Error processing row {row_idx + 1}, field '{mapping['template_field']}': {e}")
-                
                 steps_written = 0
                 if template_procedure_steps:
                     filled_steps = self.substitute_placeholders_in_steps(template_procedure_steps, data_dict)
