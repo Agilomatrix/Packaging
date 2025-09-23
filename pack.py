@@ -1634,9 +1634,9 @@ class EnhancedTemplateMapperWithImages:
 
             # --- NEW: Define color fills ---
             color_fills = {
-                "green": PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid"),
-                "yellow": PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid"),
-                "red": PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid"),
+                "green": PatternFill(start_color="3CB043", end_color="3CB043", fill_type="solid"),
+                "yellow": PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid"),
+                "red": PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid"),
             }
             
             # This dictionary defines all the critical data points we need for procedures
